@@ -1,0 +1,59 @@
+services:
+  api:
+    build:
+      context: .
+    environment:
+      LIVDOT_ENVIRONMENT: development
+      LIVDOT_HTTP_PORT: 8080
+      LIVDOT_DATABASE_HOST: postgres
+      LIVDOT_DATABASE_PORT: 5432
+      LIVDOT_DATABASE_USER: livdot
+      LIVDOT_DATABASE_PASSWORD: ${LIVDOT_DATABASE_PASSWORD:?set LIVDOT_DATABASE_PASSWORD}
+      LIVDOT_DATABASE_NAME: livdot
+      LIVDOT_DATABASE_MAX_CONNECTIONS: 20
+      LIVDOT_REDIS_ADDRESS: redis:6379
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: livdot
+      POSTGRES_USER: livdot
+      POSTGRES_PASSWORD: ${LIVDOT_DATABASE_PASSWORD:?set LIVDOT_DATABASE_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U livdot -d livdot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:

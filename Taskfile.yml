@@ -1,0 +1,49 @@
+version: "3"
+
+dotenv:
+  - .env
+
+tasks:
+  run-api:
+    desc: Run the LIV DOT API
+    cmds:
+      - go run ./cmd/api
+
+  build:
+    desc: Build all Go commands
+    cmds:
+      - go build ./...
+
+  format:
+    desc: Format Go source files
+    cmds:
+      - gofmt -w .
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test ./...
+
+  check:
+    desc: Validate formatting, tests, vet, and builds
+    cmds:
+      - test -z "$(gofmt -l .)"
+      - go test ./...
+      - go vet ./...
+      - go build ./...
+
+  compose-up:
+    desc: Build and start the local stack
+    cmds:
+      - docker compose up --build -d
+
+  compose-down:
+    desc: Stop the local stack
+    cmds:
+      - docker compose down
+
+  compose-logs:
+    desc: Follow local stack logs
+    cmds:
+      - docker compose logs -f
+
