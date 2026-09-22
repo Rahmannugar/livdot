@@ -25,10 +25,18 @@ Copy the configuration template and provide the required local values:
 cp .env.example .env
 ```
 
-Start the local stack (postgres, redis, migrate, api, worker):
+Start the local stack without forcing an image rebuild (missing images are built
+automatically):
 
 ```bash
-task compose-up
+task up
+```
+
+Build the application images before starting the stack when application code or
+dependencies change:
+
+```bash
+task up-build
 ```
 
 The API listens on `http://localhost:8080`.
@@ -55,7 +63,13 @@ task admin-create -- -email admin@livdot.local -password password123 -full-name 
 Stop the stack:
 
 ```bash
-task compose-down
+task down
+```
+
+Follow the stack logs:
+
+```bash
+task logs
 ```
 
 ## Documentation

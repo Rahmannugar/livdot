@@ -32,13 +32,13 @@ tasks:
   generate:
     desc: Generate type-safe PostgreSQL queries and the OpenAPI document
     cmds:
-      - go tool sqlc generate
+      - go -C tools tool sqlc generate -f ../sqlc.yaml
       - go run ./cmd/openapi
 
   migration-new:
     desc: Create a new Tern migration; pass the name after --
     cmds:
-      - go tool tern new --migrations internal/infra/database/migrations {{.CLI_ARGS}}
+      - go -C tools tool tern new --migrations ../internal/infra/database/migrations {{.CLI_ARGS}}
 
   migrate:
     desc: Apply pending PostgreSQL migrations from the deploy command
@@ -48,7 +48,7 @@ tasks:
   migrate-down:
     desc: Roll back the latest PostgreSQL migration
     cmds:
-      - go tool tern migrate --destination -1 --config internal/infra/database/tern.conf --migrations internal/infra/database/migrations
+      - go -C tools tool tern migrate --destination -1 --config ../internal/infra/database/tern.conf --migrations ../internal/infra/database/migrations
 
   test:
     desc: Run unit tests
@@ -58,7 +58,7 @@ tasks:
   check:
     desc: Validate formatting, tests, vet, and builds
     cmds:
-      - go tool sqlc generate
+      - go -C tools tool sqlc generate -f ../sqlc.yaml
       - go run ./cmd/openapi
       - git diff --exit-code -- openapi.json
       - test -z "$(gofmt -l .)"
@@ -66,17 +66,24 @@ tasks:
       - go vet ./...
       - go build ./...
 
-  compose-up:
-    desc: Build and start the local stack
+  up:
+    desc: Start the local stack without forcing an image rebuild
+    cmds:
+      - docker compose up -d
+      - docker compose rm -f migrate
+
+  up-build:
+    desc: Build images and start the local stack
     cmds:
       - docker compose up --build -d
+      - docker compose rm -f migrate
 
-  compose-down:
+  down:
     desc: Stop the local stack
     cmds:
       - docker compose down
 
-  compose-logs:
+  logs:
     desc: Follow local stack logs
     cmds:
       - docker compose logs -f
