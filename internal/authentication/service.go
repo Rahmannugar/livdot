@@ -14,6 +14,7 @@ import (
 	"github.com/Rahmannugar/authlier/sessiontoken"
 	authrepo "github.com/Rahmannugar/livdot/internal/authentication/repositories"
 	authenticationdb "github.com/Rahmannugar/livdot/internal/authentication/repositories/generated"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -31,7 +32,14 @@ var (
 	ErrRegistrationDisabled = errors.New("registration is disabled for this role")
 	ErrInvalidRole          = errors.New("invalid authentication role")
 	ErrInvalidProfile       = errors.New("invalid profile details")
+	ErrUnauthenticated      = errors.New("session token is not valid for an active session")
 )
+
+// Identity is the authenticated account resolved from an opaque session token.
+type Identity struct {
+	AccountID string
+	Role      Role
+}
 
 type Credentials struct {
 	Email     string
@@ -56,9 +64,10 @@ type InternalAdminInput struct {
 }
 
 type Service struct {
-	accounts map[Role]*roleAuthenticator
-	internal *roleAuthenticator
-	sessions *sessiontoken.Manager
+	accounts  map[Role]*roleAuthenticator
+	internal  *roleAuthenticator
+	sessions  *sessiontoken.Manager
+	directory *authrepo.AccountDirectory
 }
 
 type roleAuthenticator struct {
@@ -97,8 +106,9 @@ func NewService(
 	}
 
 	service := &Service{
-		accounts: make(map[Role]*roleAuthenticator, 3),
-		sessions: sessions,
+		accounts:  make(map[Role]*roleAuthenticator, 3),
+		sessions:  sessions,
+		directory: authrepo.NewAccountDirectory(pool),
 	}
 	for role, accountType := range map[Role]authenticationdb.AuthenticationAccountType{
 		RoleHost: authenticationdb.AuthenticationAccountTypeHost,
@@ -181,6 +191,42 @@ func (service *Service) Resolve(ctx context.Context, rawToken string) (sessionto
 	return service.sessions.Resolve(ctx, rawToken)
 }
 
+// Authenticate resolves an opaque session token to the active account and its
+// role. Only credential-level failures are reported as ErrUnauthenticated so
+// callers can distinguish a rejected token from an infrastructure failure.
+func (service *Service) Authenticate(ctx context.Context, rawToken string) (Identity, error) {
+	if strings.TrimSpace(rawToken) == "" {
+		return Identity{}, ErrUnauthenticated
+	}
+	record, err := service.sessions.Resolve(ctx, rawToken)
+	switch {
+	case errors.Is(err, sessiontoken.ErrNotFound),
+		errors.Is(err, sessiontoken.ErrInactive),
+		errors.Is(err, sessiontoken.ErrInvalidToken),
+		errors.Is(err, sessiontoken.ErrInvalidRecord):
+		return Identity{}, ErrUnauthenticated
+	case err != nil:
+		return Identity{}, err
+	}
+
+	accountID, err := uuid.Parse(record.SubjectID)
+	if err != nil {
+		return Identity{}, ErrUnauthenticated
+	}
+	accountType, err := service.directory.AccountType(ctx, accountID)
+	if errors.Is(err, authrepo.ErrAccountNotFound) {
+		return Identity{}, ErrUnauthenticated
+	}
+	if err != nil {
+		return Identity{}, err
+	}
+	role, ok := roleForAccountType(accountType)
+	if !ok {
+		return Identity{}, ErrUnauthenticated
+	}
+	return Identity{AccountID: record.SubjectID, Role: role}, nil
+}
+
 func (service *Service) Revoke(ctx context.Context, rawToken string) error {
 	return service.sessions.Revoke(ctx, rawToken)
 }
@@ -241,4 +287,19 @@ func validatePassword(plainPassword string) error {
 		return fmt.Errorf("password must contain at least 8 characters")
 	}
 	return nil
+}
+
+func roleForAccountType(accountType authenticationdb.AuthenticationAccountType) (Role, bool) {
+	switch accountType {
+	case authenticationdb.AuthenticationAccountTypeHost:
+		return RoleHost, true
+	case authenticationdb.AuthenticationAccountTypeCrew:
+		return RoleCrew, true
+	case authenticationdb.AuthenticationAccountTypeUser:
+		return RoleUser, true
+	case authenticationdb.AuthenticationAccountTypeInternalAdmin:
+		return RoleInternalAdmin, true
+	default:
+		return "", false
+	}
 }

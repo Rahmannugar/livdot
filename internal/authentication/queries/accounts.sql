@@ -13,6 +13,11 @@ SELECT id, email, password_hash, account_type, created_at, updated_at
 FROM authentication_accounts
 WHERE id = $1;
 
+-- name: FindAccountType :one
+SELECT account_type
+FROM authentication_accounts
+WHERE id = $1;
+
 -- name: ReplacePasswordHash :execrows
 UPDATE authentication_accounts
 SET password_hash = $1,

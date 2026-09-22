@@ -168,6 +168,19 @@ func (q *Queries) FindAccountByID(ctx context.Context, id uuid.UUID) (Authentica
 	return i, err
 }
 
+const findAccountType = `-- name: FindAccountType :one
+SELECT account_type
+FROM authentication_accounts
+WHERE id = $1
+`
+
+func (q *Queries) FindAccountType(ctx context.Context, id uuid.UUID) (AuthenticationAccountType, error) {
+	row := q.db.QueryRow(ctx, findAccountType, id)
+	var account_type AuthenticationAccountType
+	err := row.Scan(&account_type)
+	return account_type, err
+}
+
 const replacePasswordHash = `-- name: ReplacePasswordHash :execrows
 UPDATE authentication_accounts
 SET password_hash = $1,
