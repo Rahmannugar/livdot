@@ -1,0 +1,98 @@
+version: "2"
+sql:
+  - name: authentication
+    engine: postgresql
+    schema: internal/infra/database/migrations
+    queries: internal/authentication/queries
+    gen:
+      go:
+        package: authenticationdb
+        out: internal/authentication/repositories/generated
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+  - name: events
+    engine: postgresql
+    schema: internal/infra/database/migrations
+    queries: internal/events/queries
+    gen:
+      go:
+        package: eventsdb
+        out: internal/events/repositories/generated
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+  - name: ticketing
+    engine: postgresql
+    schema: internal/infra/database/migrations
+    queries: internal/ticketing/queries
+    gen:
+      go:
+        package: ticketingdb
+        out: internal/ticketing/repositories/generated
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+  - name: streaming
+    engine: postgresql
+    schema: internal/infra/database/migrations
+    queries: internal/streaming/queries
+    gen:
+      go:
+        package: streamingdb
+        out: internal/streaming/repositories/generated
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+  - name: finance
+    engine: postgresql
+    schema: internal/infra/database/migrations
+    queries: internal/finance/queries
+    gen:
+      go:
+        package: financedb
+        out: internal/finance/repositories/generated
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+  - name: notifications
+    engine: postgresql
+    schema: internal/infra/database/migrations
+    queries: internal/notifications/queries
+    gen:
+      go:
+        package: notificationsdb
+        out: internal/notifications/repositories/generated
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type:
+              import: github.com/google/uuid
+              type: UUID

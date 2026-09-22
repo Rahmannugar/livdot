@@ -1,0 +1,119 @@
+-- name: CreatePurchase :one
+INSERT INTO event_purchases (
+    id, event_id, user_id, amount_minor, status, provider, idempotency_key, checkout_url
+)
+VALUES ($1, $2, $3, $4, 'initiated', $5, $6, $7)
+ON CONFLICT (event_id, user_id) DO NOTHING
+RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+          idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+          last_error, created_at, updated_at, paid_at, refunded_at;
+
+-- name: GetPurchaseByID :one
+SELECT id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+       idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+       last_error, created_at, updated_at, paid_at, refunded_at
+FROM event_purchases
+WHERE id = $1;
+
+-- name: GetPurchaseByIdempotencyKey :one
+SELECT id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+       idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+       last_error, created_at, updated_at, paid_at, refunded_at
+FROM event_purchases
+WHERE user_id = $1 AND idempotency_key = $2;
+
+-- name: MarkPurchaseProcessing :one
+UPDATE event_purchases
+SET status = CASE
+        WHEN status = 'initiated' THEN 'processing'::purchase_status
+        ELSE status
+    END,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+          idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+          last_error, created_at, updated_at, paid_at, refunded_at;
+
+-- name: MarkPurchasePaid :one
+UPDATE event_purchases
+SET status = 'paid',
+    provider_payment_id = $2,
+    paid_at = COALESCE(paid_at, now()),
+    updated_at = now()
+WHERE id = $1
+  AND status IN ('initiated', 'processing')
+RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+          idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+          last_error, created_at, updated_at, paid_at, refunded_at;
+
+-- name: MarkPurchaseFailed :one
+UPDATE event_purchases
+SET status = 'failed',
+    updated_at = now()
+WHERE id = $1
+  AND status IN ('initiated', 'processing')
+RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+          idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+          last_error, created_at, updated_at, paid_at, refunded_at;
+
+-- name: ClaimPendingPurchases :many
+WITH claim AS (
+    SELECT id
+    FROM event_purchases
+    WHERE status IN ('initiated', 'processing')
+      AND next_attempt_at <= now()
+      AND (locked_at IS NULL OR locked_at < now() - interval '10 minutes')
+    ORDER BY next_attempt_at, created_at
+    FOR UPDATE SKIP LOCKED
+    LIMIT $1
+)
+UPDATE event_purchases AS purchase
+SET locked_at = now(),
+    attempt_count = attempt_count + 1,
+    updated_at = now()
+FROM claim
+WHERE purchase.id = claim.id
+RETURNING purchase.id, purchase.event_id, purchase.user_id, purchase.amount_minor,
+          purchase.status, purchase.provider, purchase.provider_payment_id,
+          purchase.idempotency_key, purchase.checkout_url, purchase.attempt_count,
+          purchase.next_attempt_at, purchase.locked_at, purchase.last_error,
+          purchase.created_at, purchase.updated_at, purchase.paid_at, purchase.refunded_at;
+
+-- name: CreateTemporaryTicket :one
+INSERT INTO tickets (
+    id, event_id, user_id, purchase_id, reserved_at, reservation_expires_at
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
+          reservation_expires_at, issued_at, revoked_at;
+
+-- name: ExpireTicketReservation :one
+UPDATE tickets
+SET status = 'reservation_expired',
+    reservation_expires_at = LEAST(reservation_expires_at, now())
+WHERE id = $1
+  AND status = 'temporarily_reserved'
+  AND reservation_expires_at <= now()
+RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
+          reservation_expires_at, issued_at, revoked_at;
+
+-- name: IssueTicket :one
+UPDATE tickets
+SET status = 'issued',
+    issued_at = COALESCE(issued_at, now())
+WHERE id = $1
+  AND status = 'temporarily_reserved'
+  AND reservation_expires_at > now()
+RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
+          reservation_expires_at, issued_at, revoked_at;
+
+-- name: CreateEventMember :one
+INSERT INTO event_members (id, event_id, user_id, ticket_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (event_id, user_id) DO NOTHING
+RETURNING id, event_id, user_id, ticket_id, status, created_at, revoked_at;
+
+-- name: GetEventMemberByUser :one
+SELECT id, event_id, user_id, ticket_id, status, created_at, revoked_at
+FROM event_members
+WHERE event_id = $1 AND user_id = $2;

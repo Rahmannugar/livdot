@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Rahmannugar/livdot/internal/authentication"
 	"github.com/Rahmannugar/livdot/internal/config"
 	"github.com/Rahmannugar/livdot/internal/health"
 	"github.com/Rahmannugar/livdot/internal/infra/cache"
@@ -77,6 +78,17 @@ func run(logger *slog.Logger) error {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	health.RegisterRoutes(router, databasePool, redisClient)
+
+	authService, err := authentication.NewService(
+		databasePool,
+		redisClient,
+		cfg.Session.Lifetime,
+		cfg.Session.CacheTTL,
+	)
+	if err != nil {
+		return fmt.Errorf("configure authentication: %w", err)
+	}
+	authentication.RegisterRoutes(router, authService)
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address(),

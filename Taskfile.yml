@@ -19,6 +19,26 @@ tasks:
     cmds:
       - gofmt -w .
 
+  generate:
+    desc: Generate type-safe PostgreSQL query code
+    cmds:
+      - go tool sqlc generate
+
+  migration-new:
+    desc: Create a new Tern migration; pass the name after --
+    cmds:
+      - go tool tern new --migrations internal/infra/database/migrations {{.CLI_ARGS}}
+
+  migrate:
+    desc: Apply pending PostgreSQL migrations
+    cmds:
+      - go tool tern migrate --config internal/infra/database/tern.conf --migrations internal/infra/database/migrations
+
+  migrate-down:
+    desc: Roll back the latest PostgreSQL migration
+    cmds:
+      - go tool tern migrate --destination -1 --config internal/infra/database/tern.conf --migrations internal/infra/database/migrations
+
   test:
     desc: Run unit tests
     cmds:
@@ -27,6 +47,7 @@ tasks:
   check:
     desc: Validate formatting, tests, vet, and builds
     cmds:
+      - go tool sqlc generate
       - test -z "$(gofmt -l .)"
       - go test ./...
       - go vet ./...
@@ -46,4 +67,3 @@ tasks:
     desc: Follow local stack logs
     cmds:
       - docker compose logs -f
-

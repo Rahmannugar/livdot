@@ -3,7 +3,7 @@
 LIV DOT is a backend service for paid live events. Hosts create events,
 production crews operate streams, viewers purchase access, and the platform
 coordinates refunds and host payouts when an event finishes or fails. The
-assessment requirements are retained in `assessment.md` and
+assessment requirements are retained in `assessment.md` and is answered
 `Livdot Assessment Answer.docx`.
 
 ## Technology

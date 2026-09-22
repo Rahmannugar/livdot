@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/knadh/koanf/parsers/dotenv"
 	koanfenv "github.com/knadh/koanf/providers/env/v2"
@@ -18,6 +19,8 @@ const (
 	defaultHTTPPort               = 8080
 	defaultDatabasePort           = 5432
 	defaultDatabaseMaxConnections = 20
+	defaultSessionLifetime        = 24 * time.Hour
+	defaultSessionCacheTTL        = 15 * time.Minute
 )
 
 type Environment string
@@ -33,6 +36,7 @@ type Config struct {
 	HTTP        HTTP
 	Database    Database
 	Redis       Redis
+	Session     Session
 }
 
 type HTTP struct {
@@ -51,6 +55,11 @@ type Database struct {
 type Redis struct {
 	Address  string
 	Password string
+}
+
+type Session struct {
+	Lifetime time.Duration
+	CacheTTL time.Duration
 }
 
 func Load() (Config, error) {
@@ -86,6 +95,10 @@ func Load() (Config, error) {
 			Port:           defaultDatabasePort,
 			MaxConnections: defaultDatabaseMaxConnections,
 		},
+		Session: Session{
+			Lifetime: defaultSessionLifetime,
+			CacheTTL: defaultSessionCacheTTL,
+		},
 	}
 	if k.Exists("environment") {
 		cfg.Environment = Environment(k.String("environment"))
@@ -117,6 +130,20 @@ func Load() (Config, error) {
 	}
 	cfg.Redis.Address = k.String("redis.address")
 	cfg.Redis.Password = k.String("redis.password")
+	if k.Exists("session.lifetime") {
+		lifetime, err := time.ParseDuration(k.String("session.lifetime"))
+		if err != nil {
+			return Config{}, fmt.Errorf("LIVDOT_SESSION_LIFETIME must be a duration: %w", err)
+		}
+		cfg.Session.Lifetime = lifetime
+	}
+	if k.Exists("session.cache_ttl") {
+		cacheTTL, err := time.ParseDuration(k.String("session.cache_ttl"))
+		if err != nil {
+			return Config{}, fmt.Errorf("LIVDOT_SESSION_CACHE_TTL must be a duration: %w", err)
+		}
+		cfg.Session.CacheTTL = cacheTTL
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -153,6 +180,12 @@ func (cfg Config) Validate() error {
 	}
 	if strings.TrimSpace(cfg.Redis.Address) == "" {
 		return fmt.Errorf("LIVDOT_REDIS_ADDRESS is required")
+	}
+	if cfg.Session.Lifetime <= 0 {
+		return fmt.Errorf("LIVDOT_SESSION_LIFETIME must be positive")
+	}
+	if cfg.Session.CacheTTL <= 0 {
+		return fmt.Errorf("LIVDOT_SESSION_CACHE_TTL must be positive")
 	}
 	return nil
 }
