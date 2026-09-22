@@ -51,6 +51,7 @@ type Purchase struct {
 	ProviderPaymentID *string
 	IdempotencyKey    string
 	CheckoutURL       *string
+	TicketID          string
 	PaidAt            *time.Time
 	CreatedAt         time.Time
 }
@@ -117,6 +118,11 @@ type Refunder interface {
 	RefundExpiredPurchase(ctx context.Context, purchase RefundablePurchase) error
 }
 
+// records domain events for asynchronous delivery.
+type Emitter interface {
+	Enqueue(ctx context.Context, aggregateType, aggregateID, eventType, idempotencyKey string, payload any) error
+}
+
 // persistence port owned by the ticketing domain.
 type Store interface {
 	EventForReservation(ctx context.Context, eventID string) (ReservableEvent, error)
@@ -136,10 +142,11 @@ type Service struct {
 	store    Store
 	provider payment.Provider
 	refunder Refunder
+	events   Emitter
 	now      func() time.Time
 }
 
-func NewService(store Store, provider payment.Provider, refunder Refunder) (*Service, error) {
+func NewService(store Store, provider payment.Provider, refunder Refunder, events Emitter) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("ticketing store is required")
 	}
@@ -149,7 +156,10 @@ func NewService(store Store, provider payment.Provider, refunder Refunder) (*Ser
 	if refunder == nil {
 		return nil, fmt.Errorf("refunder is required")
 	}
-	return &Service{store: store, provider: provider, refunder: refunder, now: time.Now}, nil
+	if events == nil {
+		return nil, fmt.Errorf("event emitter is required")
+	}
+	return &Service{store: store, provider: provider, refunder: refunder, events: events, now: time.Now}, nil
 }
 
 // Purchase holds a slot, records a payment intent, and returns the checkout URL.
@@ -202,7 +212,7 @@ func (service *Service) Purchase(
 	if err != nil {
 		return Purchase{}, fmt.Errorf("generate ticket id: %w", err)
 	}
-	purchase, _, err := service.store.Reserve(ctx, ReserveInput{
+	purchase, ticket, err := service.store.Reserve(ctx, ReserveInput{
 		PurchaseID:     purchaseID.String(),
 		TicketID:       ticketID.String(),
 		EventID:        event.ID,
@@ -216,6 +226,7 @@ func (service *Service) Purchase(
 	if err != nil {
 		return Purchase{}, err
 	}
+	purchase.TicketID = ticket.ID
 
 	charge, err := service.provider.InitiateCharge(ctx, payment.ChargeRequest{
 		Reference:      purchase.ID,
@@ -296,7 +307,17 @@ func (service *Service) settlePaid(ctx context.Context, event payment.WebhookEve
 		return err
 	}
 	if !result.Expired {
-		return nil
+		// queue the ticket email. the outbox key makes a redelivery a no-op.
+		return service.events.Enqueue(ctx, "purchase", result.Purchase.ID, "ticket.issued",
+			"ticket.issued:"+result.Purchase.ID, map[string]any{
+				"recipientAccountId": result.Purchase.UserID,
+				"notificationType":   "ticket_issued",
+				"templateKey":        "ticket_receipt",
+				"data": map[string]any{
+					"eventId":  result.Purchase.EventID,
+					"ticketId": ticketID(result.Ticket),
+				},
+			})
 	}
 	// the charge landed after the hold lapsed, so refund instead of granting access.
 	return service.refunder.RefundExpiredPurchase(ctx, RefundablePurchase{
@@ -314,4 +335,11 @@ func providerPaymentID(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func ticketID(ticket *Ticket) string {
+	if ticket == nil {
+		return ""
+	}
+	return ticket.ID
 }

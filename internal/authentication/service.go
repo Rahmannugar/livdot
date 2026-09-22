@@ -50,10 +50,10 @@ type Credentials struct {
 }
 
 type Result struct {
-	AccountID string
-	Email     string
-	Token     string
-	ExpiresAt time.Time
+	AccountID string    `json:"accountId"`
+	Email     string    `json:"email"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type InternalAdminInput struct {

@@ -38,6 +38,7 @@ type purchaseResponse struct {
 	AmountMinor int64      `json:"amountMinor"`
 	Status      string     `json:"status"`
 	CheckoutURL *string    `json:"checkoutUrl"`
+	TicketID    string     `json:"ticketId"`
 	PaidAt      *time.Time `json:"paidAt"`
 	CreatedAt   time.Time  `json:"createdAt"`
 }
@@ -93,6 +94,7 @@ func newPurchaseResponse(purchase Purchase) purchaseResponse {
 		AmountMinor: purchase.AmountMinor,
 		Status:      purchase.Status,
 		CheckoutURL: purchase.CheckoutURL,
+		TicketID:    purchase.TicketID,
 		PaidAt:      purchase.PaidAt,
 		CreatedAt:   purchase.CreatedAt,
 	}

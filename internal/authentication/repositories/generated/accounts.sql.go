@@ -168,6 +168,19 @@ func (q *Queries) FindAccountByID(ctx context.Context, id uuid.UUID) (Authentica
 	return i, err
 }
 
+const findAccountEmail = `-- name: FindAccountEmail :one
+SELECT email
+FROM authentication_accounts
+WHERE id = $1
+`
+
+func (q *Queries) FindAccountEmail(ctx context.Context, id uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, findAccountEmail, id)
+	var email string
+	err := row.Scan(&email)
+	return email, err
+}
+
 const findAccountType = `-- name: FindAccountType :one
 SELECT account_type
 FROM authentication_accounts

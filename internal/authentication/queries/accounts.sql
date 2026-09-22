@@ -45,3 +45,8 @@ RETURNING account_id, crew_name, crew_list, availability_status, updated_at;
 INSERT INTO internal_admins (account_id, full_name, role)
 VALUES ($1, $2, $3)
 RETURNING account_id, full_name, role, updated_at;
+
+-- name: FindAccountEmail :one
+SELECT email
+FROM authentication_accounts
+WHERE id = $1;

@@ -24,6 +24,7 @@ const (
 	defaultPaymentBaseURL         = "https://mock.paystack.local"
 	defaultPaymentSecret          = "livdot-development-webhook-secret"
 	defaultStreamingBaseURL       = "https://mock.livekit.local"
+	defaultMigrationsDir          = "internal/infra/database/migrations"
 )
 
 type Environment string
@@ -35,13 +36,14 @@ const (
 )
 
 type Config struct {
-	Environment Environment
-	HTTP        HTTP
-	Database    Database
-	Redis       Redis
-	Session     Session
-	Payment     Payment
-	Streaming   Streaming
+	Environment   Environment
+	HTTP          HTTP
+	Database      Database
+	Redis         Redis
+	Session       Session
+	Payment       Payment
+	Streaming     Streaming
+	MigrationsDir string
 }
 
 type HTTP struct {
@@ -120,6 +122,7 @@ func Load() (Config, error) {
 		Streaming: Streaming{
 			BaseURL: defaultStreamingBaseURL,
 		},
+		MigrationsDir: defaultMigrationsDir,
 	}
 	if k.Exists("environment") {
 		cfg.Environment = Environment(k.String("environment"))
@@ -173,6 +176,9 @@ func Load() (Config, error) {
 	}
 	if k.Exists("streaming.base_url") {
 		cfg.Streaming.BaseURL = k.String("streaming.base_url")
+	}
+	if k.Exists("migrations.dir") {
+		cfg.MigrationsDir = k.String("migrations.dir")
 	}
 
 	if err := cfg.Validate(); err != nil {

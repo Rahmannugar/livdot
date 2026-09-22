@@ -9,6 +9,16 @@ tasks:
     cmds:
       - go run ./cmd/api
 
+  run-worker:
+    desc: Run the LIV DOT worker
+    cmds:
+      - go run ./cmd/worker
+
+  admin-create:
+    desc: Create an internal admin; pass -email -password -full-name -role
+    cmds:
+      - go run ./cmd/admin {{.CLI_ARGS}}
+
   build:
     desc: Build all Go commands
     cmds:

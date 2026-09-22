@@ -22,6 +22,7 @@ import (
 	"github.com/Rahmannugar/livdot/internal/health"
 	"github.com/Rahmannugar/livdot/internal/infra/cache"
 	"github.com/Rahmannugar/livdot/internal/infra/database"
+	"github.com/Rahmannugar/livdot/internal/infra/outbox"
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
 	streamprovider "github.com/Rahmannugar/livdot/internal/infra/streaming"
 	"github.com/Rahmannugar/livdot/internal/streaming"
@@ -117,7 +118,9 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure payment provider: %w", err)
 	}
-	financeService, err := finance.NewService(financerepo.NewFinanceStore(databasePool), paymentProvider)
+	outboxWriter := outbox.NewWriter(databasePool)
+	financeService, err := finance.NewService(
+		financerepo.NewFinanceStore(databasePool), paymentProvider, outboxWriter)
 	if err != nil {
 		return fmt.Errorf("configure finance: %w", err)
 	}
@@ -125,6 +128,7 @@ func run(logger *slog.Logger) error {
 		ticketingrepo.NewTicketStore(databasePool),
 		paymentProvider,
 		financeService,
+		outboxWriter,
 	)
 	if err != nil {
 		return fmt.Errorf("configure ticketing: %w", err)

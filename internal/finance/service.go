@@ -155,17 +155,26 @@ type Store interface {
 type Service struct {
 	store    Store
 	provider payment.Provider
+	events   Emitter
 	now      func() time.Time
 }
 
-func NewService(store Store, provider payment.Provider) (*Service, error) {
+// records domain events for asynchronous delivery.
+type Emitter interface {
+	Enqueue(ctx context.Context, aggregateType, aggregateID, eventType, idempotencyKey string, payload any) error
+}
+
+func NewService(store Store, provider payment.Provider, events Emitter) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("finance store is required")
 	}
 	if provider == nil {
 		return nil, fmt.Errorf("payment provider is required")
 	}
-	return &Service{store: store, provider: provider, now: time.Now}, nil
+	if events == nil {
+		return nil, fmt.Errorf("event emitter is required")
+	}
+	return &Service{store: store, provider: provider, events: events, now: time.Now}, nil
 }
 
 // RefundExpiredPurchase refunds a charge whose reservation lapsed before the
@@ -345,12 +354,25 @@ func (service *Service) settleRefund(ctx context.Context, refund Refund, provide
 	if err := service.store.MarkPurchaseRefunded(ctx, refund.PurchaseID); err != nil {
 		return err
 	}
-	return service.store.RecordLedger(ctx, LedgerInput{
+	if err := service.store.RecordLedger(ctx, LedgerInput{
 		EventID:     refund.EventID,
 		EntryType:   "refund",
 		AmountMinor: marked.AmountMinor,
 		RefundID:    &marked.ID,
-	})
+	}); err != nil {
+		return err
+	}
+	// queue the refund email. the outbox key makes a redelivery a no-op.
+	return service.events.Enqueue(ctx, "refund", marked.ID, "refund.completed",
+		"refund.completed:"+marked.ID, map[string]any{
+			"recipientAccountId": marked.UserID,
+			"notificationType":   "refund_completed",
+			"templateKey":        "refund_receipt",
+			"data": map[string]any{
+				"eventId":     marked.EventID,
+				"amountMinor": marked.AmountMinor,
+			},
+		})
 }
 
 func normalizeFilter(pageSize *int32, cursor **string) {

@@ -15,7 +15,26 @@ services:
     ports:
       - "8080:8080"
     depends_on:
+  worker:
+    build:
+      context: .
+    entrypoint: ["livdot-worker"]
+    environment:
+      LIVDOT_ENVIRONMENT: development
+      LIVDOT_DATABASE_HOST: postgres
+      LIVDOT_DATABASE_PORT: 5432
+      LIVDOT_DATABASE_USER: livdot
+      LIVDOT_DATABASE_PASSWORD: ${LIVDOT_DATABASE_PASSWORD:?set LIVDOT_DATABASE_PASSWORD}
+      LIVDOT_DATABASE_NAME: livdot
+      LIVDOT_DATABASE_MAX_CONNECTIONS: 10
+      LIVDOT_REDIS_ADDRESS: redis:6379
+    depends_on:
       postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
         condition: service_healthy
       redis:
         condition: service_healthy

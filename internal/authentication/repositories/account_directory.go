@@ -37,3 +37,19 @@ func (directory *AccountDirectory) AccountType(
 	}
 	return accountType, nil
 }
+
+// AccountEmail resolves the contact address for an account, used by notifications.
+func (directory *AccountDirectory) AccountEmail(ctx context.Context, accountID string) (string, error) {
+	id, err := uuid.Parse(accountID)
+	if err != nil {
+		return "", ErrAccountNotFound
+	}
+	email, err := authenticationdb.New(directory.pool).FindAccountEmail(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrAccountNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("find account email: %w", err)
+	}
+	return email, nil
+}
