@@ -48,6 +48,22 @@ sql:
             go_type:
               import: github.com/google/uuid
               type: UUID
+  - name: webhooks
+    engine: postgresql
+    schema: internal/infra/database/migrations
+    queries: internal/webhooks/queries
+    gen:
+      go:
+        package: webhooksdb
+        out: internal/webhooks/repositories/generated
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
   - name: ticketing
     engine: postgresql
     schema: internal/infra/database/migrations

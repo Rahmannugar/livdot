@@ -117,3 +117,90 @@ RETURNING id, event_id, user_id, ticket_id, status, created_at, revoked_at;
 SELECT id, event_id, user_id, ticket_id, status, created_at, revoked_at
 FROM event_members
 WHERE event_id = $1 AND user_id = $2;
+
+-- name: GetEventForReservation :one
+SELECT id, host_id, status, amount_minor, total_tickets, available_tickets, starts_at, ends_at
+FROM events
+WHERE id = $1;
+
+-- name: ReserveEventTicket :one
+UPDATE events
+SET available_tickets = available_tickets - 1,
+    updated_at = now()
+WHERE id = $1
+  AND status = 'upcoming'
+  AND available_tickets > 0
+RETURNING id, host_id, status, amount_minor, total_tickets, available_tickets, starts_at, ends_at;
+
+-- name: ReleaseEventTicket :one
+UPDATE events
+SET available_tickets = available_tickets + 1,
+    updated_at = now()
+WHERE id = $1
+  AND available_tickets < total_tickets
+RETURNING id, host_id, status, amount_minor, total_tickets, available_tickets, starts_at, ends_at;
+
+-- name: GetPurchaseByEventAndUser :one
+SELECT id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+       idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+       last_error, created_at, updated_at, paid_at, refunded_at
+FROM event_purchases
+WHERE event_id = $1 AND user_id = $2;
+
+-- name: UpdatePurchaseCheckout :one
+UPDATE event_purchases
+SET checkout_url = $2,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+          idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+          last_error, created_at, updated_at, paid_at, refunded_at;
+
+-- name: GetTicketByID :one
+SELECT id, event_id, user_id, purchase_id, status, reserved_at,
+       reservation_expires_at, issued_at, revoked_at
+FROM tickets
+WHERE id = $1;
+
+-- name: GetTicketByPurchase :one
+SELECT id, event_id, user_id, purchase_id, status, reserved_at,
+       reservation_expires_at, issued_at, revoked_at
+FROM tickets
+WHERE purchase_id = $1;
+
+-- name: IssueTicketByPurchase :one
+UPDATE tickets
+SET status = 'issued',
+    issued_at = COALESCE(issued_at, now())
+WHERE purchase_id = $1
+  AND status = 'temporarily_reserved'
+  AND reservation_expires_at > now()
+RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
+          reservation_expires_at, issued_at, revoked_at;
+
+-- name: ExpireTicketByPurchase :one
+UPDATE tickets
+SET status = 'reservation_expired',
+    reservation_expires_at = LEAST(reservation_expires_at, now())
+WHERE purchase_id = $1
+  AND status = 'temporarily_reserved'
+RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
+          reservation_expires_at, issued_at, revoked_at;
+
+-- name: ClaimExpiredTicketReservations :many
+WITH claim AS (
+    SELECT id
+    FROM tickets
+    WHERE status = 'temporarily_reserved'
+      AND reservation_expires_at <= now()
+    ORDER BY reservation_expires_at
+    FOR UPDATE SKIP LOCKED
+    LIMIT $1
+)
+UPDATE tickets AS ticket
+SET status = 'reservation_expired'
+FROM claim
+WHERE ticket.id = claim.id
+RETURNING ticket.id, ticket.event_id, ticket.user_id, ticket.purchase_id,
+          ticket.status, ticket.reserved_at, ticket.reservation_expires_at,
+          ticket.issued_at, ticket.revoked_at;

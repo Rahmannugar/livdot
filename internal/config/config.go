@@ -21,6 +21,8 @@ const (
 	defaultDatabaseMaxConnections = 20
 	defaultSessionLifetime        = 24 * time.Hour
 	defaultSessionCacheTTL        = 15 * time.Minute
+	defaultPaymentBaseURL         = "https://mock.paystack.local"
+	defaultPaymentSecret          = "livdot-development-webhook-secret"
 )
 
 type Environment string
@@ -37,6 +39,7 @@ type Config struct {
 	Database    Database
 	Redis       Redis
 	Session     Session
+	Payment     Payment
 }
 
 type HTTP struct {
@@ -60,6 +63,11 @@ type Redis struct {
 type Session struct {
 	Lifetime time.Duration
 	CacheTTL time.Duration
+}
+
+type Payment struct {
+	Secret  string
+	BaseURL string
 }
 
 func Load() (Config, error) {
@@ -98,6 +106,10 @@ func Load() (Config, error) {
 		Session: Session{
 			Lifetime: defaultSessionLifetime,
 			CacheTTL: defaultSessionCacheTTL,
+		},
+		Payment: Payment{
+			Secret:  defaultPaymentSecret,
+			BaseURL: defaultPaymentBaseURL,
 		},
 	}
 	if k.Exists("environment") {
@@ -144,6 +156,12 @@ func Load() (Config, error) {
 		}
 		cfg.Session.CacheTTL = cacheTTL
 	}
+	if k.Exists("payment.secret") {
+		cfg.Payment.Secret = k.String("payment.secret")
+	}
+	if k.Exists("payment.base_url") {
+		cfg.Payment.BaseURL = k.String("payment.base_url")
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -186,6 +204,15 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.Session.CacheTTL <= 0 {
 		return fmt.Errorf("LIVDOT_SESSION_CACHE_TTL must be positive")
+	}
+	if strings.TrimSpace(cfg.Payment.Secret) == "" {
+		return fmt.Errorf("LIVDOT_PAYMENT_SECRET is required")
+	}
+	if cfg.Environment == EnvironmentProduction && cfg.Payment.Secret == defaultPaymentSecret {
+		return fmt.Errorf("LIVDOT_PAYMENT_SECRET must not use the development default in production")
+	}
+	if strings.TrimSpace(cfg.Payment.BaseURL) == "" {
+		return fmt.Errorf("LIVDOT_PAYMENT_BASE_URL is required")
 	}
 	return nil
 }

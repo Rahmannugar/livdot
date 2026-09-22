@@ -12,6 +12,55 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimExpiredTicketReservations = `-- name: ClaimExpiredTicketReservations :many
+WITH claim AS (
+    SELECT id
+    FROM tickets
+    WHERE status = 'temporarily_reserved'
+      AND reservation_expires_at <= now()
+    ORDER BY reservation_expires_at
+    FOR UPDATE SKIP LOCKED
+    LIMIT $1
+)
+UPDATE tickets AS ticket
+SET status = 'reservation_expired'
+FROM claim
+WHERE ticket.id = claim.id
+RETURNING ticket.id, ticket.event_id, ticket.user_id, ticket.purchase_id,
+          ticket.status, ticket.reserved_at, ticket.reservation_expires_at,
+          ticket.issued_at, ticket.revoked_at
+`
+
+func (q *Queries) ClaimExpiredTicketReservations(ctx context.Context, limit int32) ([]Ticket, error) {
+	rows, err := q.db.Query(ctx, claimExpiredTicketReservations, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Ticket
+	for rows.Next() {
+		var i Ticket
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.UserID,
+			&i.PurchaseID,
+			&i.Status,
+			&i.ReservedAt,
+			&i.ReservationExpiresAt,
+			&i.IssuedAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const claimPendingPurchases = `-- name: ClaimPendingPurchases :many
 WITH claim AS (
     SELECT id
@@ -204,6 +253,33 @@ func (q *Queries) CreateTemporaryTicket(ctx context.Context, arg CreateTemporary
 	return i, err
 }
 
+const expireTicketByPurchase = `-- name: ExpireTicketByPurchase :one
+UPDATE tickets
+SET status = 'reservation_expired',
+    reservation_expires_at = LEAST(reservation_expires_at, now())
+WHERE purchase_id = $1
+  AND status = 'temporarily_reserved'
+RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
+          reservation_expires_at, issued_at, revoked_at
+`
+
+func (q *Queries) ExpireTicketByPurchase(ctx context.Context, purchaseID uuid.UUID) (Ticket, error) {
+	row := q.db.QueryRow(ctx, expireTicketByPurchase, purchaseID)
+	var i Ticket
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.PurchaseID,
+		&i.Status,
+		&i.ReservedAt,
+		&i.ReservationExpiresAt,
+		&i.IssuedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const expireTicketReservation = `-- name: ExpireTicketReservation :one
 UPDATE tickets
 SET status = 'reservation_expired',
@@ -232,6 +308,39 @@ func (q *Queries) ExpireTicketReservation(ctx context.Context, id uuid.UUID) (Ti
 	return i, err
 }
 
+const getEventForReservation = `-- name: GetEventForReservation :one
+SELECT id, host_id, status, amount_minor, total_tickets, available_tickets, starts_at, ends_at
+FROM events
+WHERE id = $1
+`
+
+type GetEventForReservationRow struct {
+	ID               uuid.UUID
+	HostID           uuid.UUID
+	Status           EventStatus
+	AmountMinor      int64
+	TotalTickets     int32
+	AvailableTickets int32
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+}
+
+func (q *Queries) GetEventForReservation(ctx context.Context, id uuid.UUID) (GetEventForReservationRow, error) {
+	row := q.db.QueryRow(ctx, getEventForReservation, id)
+	var i GetEventForReservationRow
+	err := row.Scan(
+		&i.ID,
+		&i.HostID,
+		&i.Status,
+		&i.AmountMinor,
+		&i.TotalTickets,
+		&i.AvailableTickets,
+		&i.StartsAt,
+		&i.EndsAt,
+	)
+	return i, err
+}
+
 const getEventMemberByUser = `-- name: GetEventMemberByUser :one
 SELECT id, event_id, user_id, ticket_id, status, created_at, revoked_at
 FROM event_members
@@ -254,6 +363,44 @@ func (q *Queries) GetEventMemberByUser(ctx context.Context, arg GetEventMemberBy
 		&i.Status,
 		&i.CreatedAt,
 		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const getPurchaseByEventAndUser = `-- name: GetPurchaseByEventAndUser :one
+SELECT id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+       idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+       last_error, created_at, updated_at, paid_at, refunded_at
+FROM event_purchases
+WHERE event_id = $1 AND user_id = $2
+`
+
+type GetPurchaseByEventAndUserParams struct {
+	EventID uuid.UUID
+	UserID  uuid.UUID
+}
+
+func (q *Queries) GetPurchaseByEventAndUser(ctx context.Context, arg GetPurchaseByEventAndUserParams) (EventPurchase, error) {
+	row := q.db.QueryRow(ctx, getPurchaseByEventAndUser, arg.EventID, arg.UserID)
+	var i EventPurchase
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.AmountMinor,
+		&i.Status,
+		&i.Provider,
+		&i.ProviderPaymentID,
+		&i.IdempotencyKey,
+		&i.CheckoutUrl,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LockedAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PaidAt,
+		&i.RefundedAt,
 	)
 	return i, err
 }
@@ -329,6 +476,54 @@ func (q *Queries) GetPurchaseByIdempotencyKey(ctx context.Context, arg GetPurcha
 	return i, err
 }
 
+const getTicketByID = `-- name: GetTicketByID :one
+SELECT id, event_id, user_id, purchase_id, status, reserved_at,
+       reservation_expires_at, issued_at, revoked_at
+FROM tickets
+WHERE id = $1
+`
+
+func (q *Queries) GetTicketByID(ctx context.Context, id uuid.UUID) (Ticket, error) {
+	row := q.db.QueryRow(ctx, getTicketByID, id)
+	var i Ticket
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.PurchaseID,
+		&i.Status,
+		&i.ReservedAt,
+		&i.ReservationExpiresAt,
+		&i.IssuedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const getTicketByPurchase = `-- name: GetTicketByPurchase :one
+SELECT id, event_id, user_id, purchase_id, status, reserved_at,
+       reservation_expires_at, issued_at, revoked_at
+FROM tickets
+WHERE purchase_id = $1
+`
+
+func (q *Queries) GetTicketByPurchase(ctx context.Context, purchaseID uuid.UUID) (Ticket, error) {
+	row := q.db.QueryRow(ctx, getTicketByPurchase, purchaseID)
+	var i Ticket
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.PurchaseID,
+		&i.Status,
+		&i.ReservedAt,
+		&i.ReservationExpiresAt,
+		&i.IssuedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const issueTicket = `-- name: IssueTicket :one
 UPDATE tickets
 SET status = 'issued',
@@ -342,6 +537,34 @@ RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
 
 func (q *Queries) IssueTicket(ctx context.Context, id uuid.UUID) (Ticket, error) {
 	row := q.db.QueryRow(ctx, issueTicket, id)
+	var i Ticket
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.PurchaseID,
+		&i.Status,
+		&i.ReservedAt,
+		&i.ReservationExpiresAt,
+		&i.IssuedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const issueTicketByPurchase = `-- name: IssueTicketByPurchase :one
+UPDATE tickets
+SET status = 'issued',
+    issued_at = COALESCE(issued_at, now())
+WHERE purchase_id = $1
+  AND status = 'temporarily_reserved'
+  AND reservation_expires_at > now()
+RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
+          reservation_expires_at, issued_at, revoked_at
+`
+
+func (q *Queries) IssueTicketByPurchase(ctx context.Context, purchaseID uuid.UUID) (Ticket, error) {
+	row := q.db.QueryRow(ctx, issueTicketByPurchase, purchaseID)
 	var i Ticket
 	err := row.Scan(
 		&i.ID,
@@ -451,6 +674,119 @@ RETURNING id, event_id, user_id, amount_minor, status, provider, provider_paymen
 
 func (q *Queries) MarkPurchaseProcessing(ctx context.Context, id uuid.UUID) (EventPurchase, error) {
 	row := q.db.QueryRow(ctx, markPurchaseProcessing, id)
+	var i EventPurchase
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.AmountMinor,
+		&i.Status,
+		&i.Provider,
+		&i.ProviderPaymentID,
+		&i.IdempotencyKey,
+		&i.CheckoutUrl,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LockedAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PaidAt,
+		&i.RefundedAt,
+	)
+	return i, err
+}
+
+const releaseEventTicket = `-- name: ReleaseEventTicket :one
+UPDATE events
+SET available_tickets = available_tickets + 1,
+    updated_at = now()
+WHERE id = $1
+  AND available_tickets < total_tickets
+RETURNING id, host_id, status, amount_minor, total_tickets, available_tickets, starts_at, ends_at
+`
+
+type ReleaseEventTicketRow struct {
+	ID               uuid.UUID
+	HostID           uuid.UUID
+	Status           EventStatus
+	AmountMinor      int64
+	TotalTickets     int32
+	AvailableTickets int32
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+}
+
+func (q *Queries) ReleaseEventTicket(ctx context.Context, id uuid.UUID) (ReleaseEventTicketRow, error) {
+	row := q.db.QueryRow(ctx, releaseEventTicket, id)
+	var i ReleaseEventTicketRow
+	err := row.Scan(
+		&i.ID,
+		&i.HostID,
+		&i.Status,
+		&i.AmountMinor,
+		&i.TotalTickets,
+		&i.AvailableTickets,
+		&i.StartsAt,
+		&i.EndsAt,
+	)
+	return i, err
+}
+
+const reserveEventTicket = `-- name: ReserveEventTicket :one
+UPDATE events
+SET available_tickets = available_tickets - 1,
+    updated_at = now()
+WHERE id = $1
+  AND status = 'upcoming'
+  AND available_tickets > 0
+RETURNING id, host_id, status, amount_minor, total_tickets, available_tickets, starts_at, ends_at
+`
+
+type ReserveEventTicketRow struct {
+	ID               uuid.UUID
+	HostID           uuid.UUID
+	Status           EventStatus
+	AmountMinor      int64
+	TotalTickets     int32
+	AvailableTickets int32
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+}
+
+func (q *Queries) ReserveEventTicket(ctx context.Context, id uuid.UUID) (ReserveEventTicketRow, error) {
+	row := q.db.QueryRow(ctx, reserveEventTicket, id)
+	var i ReserveEventTicketRow
+	err := row.Scan(
+		&i.ID,
+		&i.HostID,
+		&i.Status,
+		&i.AmountMinor,
+		&i.TotalTickets,
+		&i.AvailableTickets,
+		&i.StartsAt,
+		&i.EndsAt,
+	)
+	return i, err
+}
+
+const updatePurchaseCheckout = `-- name: UpdatePurchaseCheckout :one
+UPDATE event_purchases
+SET checkout_url = $2,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+          idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+          last_error, created_at, updated_at, paid_at, refunded_at
+`
+
+type UpdatePurchaseCheckoutParams struct {
+	ID          uuid.UUID
+	CheckoutUrl *string
+}
+
+func (q *Queries) UpdatePurchaseCheckout(ctx context.Context, arg UpdatePurchaseCheckoutParams) (EventPurchase, error) {
+	row := q.db.QueryRow(ctx, updatePurchaseCheckout, arg.ID, arg.CheckoutUrl)
 	var i EventPurchase
 	err := row.Scan(
 		&i.ID,

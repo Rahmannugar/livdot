@@ -17,9 +17,16 @@ import (
 	crewsrepo "github.com/Rahmannugar/livdot/internal/crews/repositories"
 	"github.com/Rahmannugar/livdot/internal/events"
 	eventsrepo "github.com/Rahmannugar/livdot/internal/events/repositories"
+	"github.com/Rahmannugar/livdot/internal/finance"
+	financerepo "github.com/Rahmannugar/livdot/internal/finance/repositories"
 	"github.com/Rahmannugar/livdot/internal/health"
 	"github.com/Rahmannugar/livdot/internal/infra/cache"
 	"github.com/Rahmannugar/livdot/internal/infra/database"
+	"github.com/Rahmannugar/livdot/internal/infra/payment"
+	"github.com/Rahmannugar/livdot/internal/ticketing"
+	ticketingrepo "github.com/Rahmannugar/livdot/internal/ticketing/repositories"
+	"github.com/Rahmannugar/livdot/internal/webhooks"
+	webhooksrepo "github.com/Rahmannugar/livdot/internal/webhooks/repositories"
 	"github.com/gin-gonic/gin"
 )
 
@@ -103,13 +110,43 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("configure events: %w", err)
 	}
 
-	// Public browsing stays open; mutation routes resolve the session first so
-	// RequireRole can authorize against the authenticated identity.
+	paymentProvider, err := payment.NewMock(cfg.Payment.Secret, cfg.Payment.BaseURL)
+	if err != nil {
+		return fmt.Errorf("configure payment provider: %w", err)
+	}
+	financeService, err := finance.NewService(financerepo.NewFinanceStore(databasePool), paymentProvider)
+	if err != nil {
+		return fmt.Errorf("configure finance: %w", err)
+	}
+	ticketingService, err := ticketing.NewService(
+		ticketingrepo.NewTicketStore(databasePool),
+		paymentProvider,
+		financeService,
+	)
+	if err != nil {
+		return fmt.Errorf("configure ticketing: %w", err)
+	}
+	webhookService, err := webhooks.NewService(
+		webhooksrepo.NewWebhookStore(databasePool),
+		paymentProvider,
+		ticketingService,
+	)
+	if err != nil {
+		return fmt.Errorf("configure webhooks: %w", err)
+	}
+
+	// public browse stays open; mutations resolve the session first so
+	// RequireRole can check the identity.
 	public := router.Group("/api")
 	authenticated := router.Group("/api")
 	authenticated.Use(authentication.RequireSession(authService))
 	crews.RegisterRoutes(public, authenticated, crewService)
 	events.RegisterRoutes(public, authenticated, eventService)
+	ticketing.RegisterRoutes(authenticated, ticketingService)
+	webhooks.RegisterRoutes(public, webhookService)
+	if cfg.Environment != config.EnvironmentProduction {
+		webhooks.RegisterDevSimulator(public, paymentProvider, webhookService)
+	}
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address(),

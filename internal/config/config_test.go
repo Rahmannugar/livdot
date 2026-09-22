@@ -19,6 +19,7 @@ func validConfig() Config {
 		},
 		Redis:   Redis{Address: "localhost:6379"},
 		Session: Session{Lifetime: time.Hour, CacheTTL: time.Minute},
+		Payment: Payment{Secret: "test-secret", BaseURL: "https://mock.paystack.local"},
 	}
 }
 
@@ -42,6 +43,14 @@ func TestValidateRejectsMissingDependencies(t *testing.T) {
 		{
 			name:   "session cache TTL",
 			mutate: func(cfg *Config) { cfg.Session.CacheTTL = 0 },
+		},
+		{
+			name:   "payment secret",
+			mutate: func(cfg *Config) { cfg.Payment.Secret = "" },
+		},
+		{
+			name:   "payment base URL",
+			mutate: func(cfg *Config) { cfg.Payment.BaseURL = "" },
 		},
 	}
 
