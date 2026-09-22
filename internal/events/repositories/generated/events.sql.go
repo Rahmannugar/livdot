@@ -21,7 +21,7 @@ WHERE id = $1
   AND status = 'upcoming'
 RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
           status, total_tickets, available_tickets, starts_at, ends_at,
-          cancelled_at, created_at, updated_at, crew_notified_at
+          cancelled_at, created_at, updated_at
 `
 
 func (q *Queries) CancelEvent(ctx context.Context, id uuid.UUID) (Event, error) {
@@ -42,7 +42,6 @@ func (q *Queries) CancelEvent(ctx context.Context, id uuid.UUID) (Event, error) 
 		&i.CancelledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.CrewNotifiedAt,
 	)
 	return i, err
 }
@@ -63,7 +62,7 @@ INSERT INTO events (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9)
 RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
           status, total_tickets, available_tickets, starts_at, ends_at,
-          cancelled_at, created_at, updated_at, crew_notified_at
+          cancelled_at, created_at, updated_at
 `
 
 type CreateEventParams struct {
@@ -106,7 +105,6 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 		&i.CancelledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.CrewNotifiedAt,
 	)
 	return i, err
 }
@@ -114,7 +112,7 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 const getEvent = `-- name: GetEvent :one
 SELECT id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
        status, total_tickets, available_tickets, starts_at, ends_at,
-       cancelled_at, created_at, updated_at, crew_notified_at
+       cancelled_at, created_at, updated_at
 FROM events
 WHERE id = $1
 `
@@ -137,7 +135,6 @@ func (q *Queries) GetEvent(ctx context.Context, id uuid.UUID) (Event, error) {
 		&i.CancelledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.CrewNotifiedAt,
 	)
 	return i, err
 }
@@ -198,7 +195,7 @@ func (q *Queries) GetEventDetail(ctx context.Context, id uuid.UUID) (GetEventDet
 const listEvents = `-- name: ListEvents :many
 SELECT id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
        status, total_tickets, available_tickets, starts_at, ends_at,
-       cancelled_at, created_at, updated_at, crew_notified_at
+       cancelled_at, created_at, updated_at
 FROM events
 WHERE ($1::text IS NULL OR name ILIKE '%' || $1::text || '%')
   AND ($2::event_status IS NULL OR status = $2::event_status)
@@ -275,7 +272,6 @@ func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]Event
 			&i.CancelledAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.CrewNotifiedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -287,61 +283,6 @@ func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]Event
 	return items, nil
 }
 
-const listEventsAwaitingCrewNotice = `-- name: ListEventsAwaitingCrewNotice :many
-SELECT id, assigned_crew_id, name
-FROM events
-WHERE assigned_crew_id IS NOT NULL
-  AND crew_notified_at IS NULL
-ORDER BY created_at
-LIMIT $1
-`
-
-type ListEventsAwaitingCrewNoticeRow struct {
-	ID             uuid.UUID
-	AssignedCrewID pgtype.UUID
-	Name           string
-}
-
-func (q *Queries) ListEventsAwaitingCrewNotice(ctx context.Context, limit int32) ([]ListEventsAwaitingCrewNoticeRow, error) {
-	rows, err := q.db.Query(ctx, listEventsAwaitingCrewNotice, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListEventsAwaitingCrewNoticeRow
-	for rows.Next() {
-		var i ListEventsAwaitingCrewNoticeRow
-		if err := rows.Scan(&i.ID, &i.AssignedCrewID, &i.Name); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const markEventCrewNotified = `-- name: MarkEventCrewNotified :one
-UPDATE events
-SET crew_notified_at = now()
-WHERE id = $1
-  AND crew_notified_at IS NULL
-RETURNING id, crew_notified_at
-`
-
-type MarkEventCrewNotifiedRow struct {
-	ID             uuid.UUID
-	CrewNotifiedAt pgtype.Timestamptz
-}
-
-func (q *Queries) MarkEventCrewNotified(ctx context.Context, id uuid.UUID) (MarkEventCrewNotifiedRow, error) {
-	row := q.db.QueryRow(ctx, markEventCrewNotified, id)
-	var i MarkEventCrewNotifiedRow
-	err := row.Scan(&i.ID, &i.CrewNotifiedAt)
-	return i, err
-}
-
 const reserveEventTicket = `-- name: ReserveEventTicket :one
 UPDATE events
 SET available_tickets = available_tickets - 1,
@@ -351,7 +292,7 @@ WHERE id = $1
   AND available_tickets > 0
 RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
           status, total_tickets, available_tickets, starts_at, ends_at,
-          cancelled_at, created_at, updated_at, crew_notified_at
+          cancelled_at, created_at, updated_at
 `
 
 func (q *Queries) ReserveEventTicket(ctx context.Context, id uuid.UUID) (Event, error) {
@@ -372,7 +313,6 @@ func (q *Queries) ReserveEventTicket(ctx context.Context, id uuid.UUID) (Event, 
 		&i.CancelledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.CrewNotifiedAt,
 	)
 	return i, err
 }
@@ -393,7 +333,7 @@ WHERE id = $1
   AND $5 >= total_tickets - available_tickets
 RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
           status, total_tickets, available_tickets, starts_at, ends_at,
-          cancelled_at, created_at, updated_at, crew_notified_at
+          cancelled_at, created_at, updated_at
 `
 
 type UpdateEventParams struct {
@@ -434,7 +374,6 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event
 		&i.CancelledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.CrewNotifiedAt,
 	)
 	return i, err
 }
@@ -447,7 +386,7 @@ SET status = $2,
 WHERE id = $1
 RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
           status, total_tickets, available_tickets, starts_at, ends_at,
-          cancelled_at, created_at, updated_at, crew_notified_at
+          cancelled_at, created_at, updated_at
 `
 
 type UpdateEventStatusParams struct {
@@ -473,7 +412,6 @@ func (q *Queries) UpdateEventStatus(ctx context.Context, arg UpdateEventStatusPa
 		&i.CancelledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.CrewNotifiedAt,
 	)
 	return i, err
 }

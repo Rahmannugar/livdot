@@ -131,21 +131,12 @@ type UpdateInput struct {
 
 // persistence port owned by the events domain.
 type Store interface {
-	Create(ctx context.Context, event NewEvent) (Event, error)
+	Create(ctx context.Context, event NewEvent, recipientEmail string) (Event, error)
 	Get(ctx context.Context, id string) (Event, error)
 	Detail(ctx context.Context, id string) (Event, error)
 	Update(ctx context.Context, update EventUpdate) (Event, error)
 	Cancel(ctx context.Context, id string) (Event, error)
 	List(ctx context.Context, filter Filter) ([]Event, error)
-	PendingCrewNotices(ctx context.Context, limit int32) ([]CrewNotice, error)
-	MarkCrewNotified(ctx context.Context, eventID string) error
-}
-
-// an assignment that still needs its crew email.
-type CrewNotice struct {
-	EventID   string
-	CrewID    string
-	EventName string
 }
 
 // lets events validate a crew assignment without touching crews storage.
@@ -153,20 +144,29 @@ type CrewDirectory interface {
 	Exists(ctx context.Context, accountID string) (bool, error)
 }
 
-type Service struct {
-	store Store
-	crews CrewDirectory
-	now   func() time.Time
+// resolves a recipient email so the crew notice can be queued in-transaction.
+type Directory interface {
+	AccountEmail(ctx context.Context, accountID string) (string, error)
 }
 
-func NewService(store Store, crews CrewDirectory) (*Service, error) {
+type Service struct {
+	store     Store
+	crews     CrewDirectory
+	directory Directory
+	now       func() time.Time
+}
+
+func NewService(store Store, crews CrewDirectory, directory Directory) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("events store is required")
 	}
 	if crews == nil {
 		return nil, fmt.Errorf("crew directory is required")
 	}
-	return &Service{store: store, crews: crews, now: time.Now}, nil
+	if directory == nil {
+		return nil, fmt.Errorf("recipient directory is required")
+	}
+	return &Service{store: store, crews: crews, directory: directory, now: time.Now}, nil
 }
 
 func (service *Service) Create(ctx context.Context, hostID string, input CreateInput) (Event, error) {
@@ -174,9 +174,14 @@ func (service *Service) Create(ctx context.Context, hostID string, input CreateI
 	if err := validateSchedule(name, input.AmountMinor, input.DurationSeconds, input.TotalTickets, input.StartsAt, service.now()); err != nil {
 		return Event{}, err
 	}
+	recipient := ""
 	if input.AssignedCrewID != nil {
 		if err := service.ensureCrew(ctx, *input.AssignedCrewID); err != nil {
 			return Event{}, err
+		}
+		// best effort: a missing address must not block event creation.
+		if email, err := service.directory.AccountEmail(ctx, *input.AssignedCrewID); err == nil {
+			recipient = email
 		}
 	}
 	return service.store.Create(ctx, NewEvent{
@@ -188,19 +193,7 @@ func (service *Service) Create(ctx context.Context, hostID string, input CreateI
 		TotalTickets:    input.TotalTickets,
 		StartsAt:        input.StartsAt,
 		EndsAt:          endsAt(input.StartsAt, input.DurationSeconds),
-	})
-}
-
-// PendingCrewNotices lists assignments whose crew has not been emailed yet.
-func (service *Service) PendingCrewNotices(ctx context.Context, limit int32) ([]CrewNotice, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	return service.store.PendingCrewNotices(ctx, limit)
-}
-
-func (service *Service) MarkCrewNotified(ctx context.Context, eventID string) error {
-	return service.store.MarkCrewNotified(ctx, eventID)
+	}, recipient)
 }
 
 func (service *Service) List(ctx context.Context, filter Filter) (Page, error) {

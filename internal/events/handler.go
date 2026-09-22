@@ -25,10 +25,22 @@ type Handler struct {
 	service ServiceAPI
 }
 
+// event quotas are per account: reads are generous, writes are guarded.
+var (
+	readPolicy = ratelimit.Policy{
+		Name: "events.read", Burst: 40, RefillPerSecond: 20,
+		WindowLimit: 300, Window: time.Minute, KeyBy: ratelimit.KeyByAccount,
+	}
+	writePolicy = ratelimit.Policy{
+		Name: "events.write", Burst: 10, RefillPerSecond: 3,
+		WindowLimit: 40, Window: time.Minute, KeyBy: ratelimit.KeyByAccount,
+	}
+)
+
 func RegisterRoutes(public gin.IRoutes, authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := &Handler{service: service}
-	read := limiter.Middleware(ratelimit.PolicyRead)
-	write := limiter.Middleware(ratelimit.PolicyWrite)
+	read := limiter.Middleware(readPolicy)
+	write := limiter.Middleware(writePolicy)
 	public.GET("/events", read, handler.list)
 	public.GET("/events/:id", read, handler.detail)
 	authenticated.POST("/events", authentication.RequireRole(authentication.RoleHost), write, handler.create)

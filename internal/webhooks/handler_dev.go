@@ -13,7 +13,7 @@ import (
 // delivers a provider webhook as Paystack would. It is never mounted in
 // production; it exists so the mocked payment flow is reachable from Postman.
 func RegisterDevSimulator(public gin.IRoutes, mock *payment.Mock, service *Service, limiter *ratelimit.Limiter) {
-	public.POST("/dev/payments/notify", limiter.Middleware(ratelimit.PolicyWebhook), func(ctx *gin.Context) {
+	public.POST("/dev/payments/notify", limiter.Middleware(ingestPolicy), func(ctx *gin.Context) {
 		var request struct {
 			PurchaseID string `json:"purchaseId" binding:"required"`
 			Outcome    string `json:"outcome" binding:"required"`

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Rahmannugar/livdot/internal/events"
 	eventsdb "github.com/Rahmannugar/livdot/internal/events/repositories/generated"
+	"github.com/Rahmannugar/livdot/internal/notifications"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -22,7 +23,7 @@ func NewEventStore(pool *pgxpool.Pool) *EventStore {
 	return &EventStore{pool: pool}
 }
 
-func (store *EventStore) Create(ctx context.Context, event events.NewEvent) (events.Event, error) {
+func (store *EventStore) Create(ctx context.Context, event events.NewEvent, recipientEmail string) (events.Event, error) {
 	eventID, err := uuid.NewV7()
 	if err != nil {
 		return events.Event{}, fmt.Errorf("generate event ID: %w", err)
@@ -36,7 +37,13 @@ func (store *EventStore) Create(ctx context.Context, event events.NewEvent) (eve
 		return events.Event{}, err
 	}
 
-	record, err := eventsdb.New(store.pool).CreateEvent(ctx, eventsdb.CreateEventParams{
+	tx, err := store.pool.Begin(ctx)
+	if err != nil {
+		return events.Event{}, fmt.Errorf("begin event create: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	record, err := eventsdb.New(tx).CreateEvent(ctx, eventsdb.CreateEventParams{
 		ID:              eventID,
 		HostID:          hostID,
 		AssignedCrewID:  assignedCrewID,
@@ -49,6 +56,20 @@ func (store *EventStore) Create(ctx context.Context, event events.NewEvent) (eve
 	})
 	if err != nil {
 		return events.Event{}, fmt.Errorf("create event: %w", err)
+	}
+	if recipientEmail != "" && event.AssignedCrewID != nil {
+		// queue the crew notice in the same tx so it commits with the event.
+		if _, err := notifications.NewQueue(tx).Enqueue(ctx, notifications.CrewAssigned(
+			recipientEmail,
+			*event.AssignedCrewID,
+			record.ID.String(),
+			record.Name,
+		)); err != nil {
+			return events.Event{}, fmt.Errorf("queue crew notice: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return events.Event{}, fmt.Errorf("commit event create: %w", err)
 	}
 	return eventRecord(record), nil
 }
@@ -170,39 +191,6 @@ func (store *EventStore) List(ctx context.Context, filter events.Filter) ([]even
 		results = append(results, eventRecord(record))
 	}
 	return results, nil
-}
-
-func (store *EventStore) PendingCrewNotices(ctx context.Context, limit int32) ([]events.CrewNotice, error) {
-	records, err := eventsdb.New(store.pool).ListEventsAwaitingCrewNotice(ctx, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list events awaiting crew notice: %w", err)
-	}
-	notices := make([]events.CrewNotice, 0, len(records))
-	for _, record := range records {
-		if !record.AssignedCrewID.Valid {
-			continue
-		}
-		notices = append(notices, events.CrewNotice{
-			EventID:   record.ID.String(),
-			CrewID:    uuid.UUID(record.AssignedCrewID.Bytes).String(),
-			EventName: record.Name,
-		})
-	}
-	return notices, nil
-}
-
-func (store *EventStore) MarkCrewNotified(ctx context.Context, eventID string) error {
-	id, err := uuid.Parse(eventID)
-	if err != nil {
-		return events.ErrInvalidInput
-	}
-	if _, err := eventsdb.New(store.pool).MarkEventCrewNotified(ctx, id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-		return fmt.Errorf("mark event crew notified: %w", err)
-	}
-	return nil
 }
 
 func eventRecord(record eventsdb.Event) events.Event {

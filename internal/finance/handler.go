@@ -24,12 +24,24 @@ type Handler struct {
 	service ServiceAPI
 }
 
+// finance reads are per account; admin refunds are deliberately tight.
+var (
+	readPolicy = ratelimit.Policy{
+		Name: "finance.read", Burst: 20, RefillPerSecond: 10,
+		WindowLimit: 120, Window: time.Minute, KeyBy: ratelimit.KeyByAccount,
+	}
+	refundPolicy = ratelimit.Policy{
+		Name: "finance.refund", Burst: 5, RefillPerSecond: 1,
+		WindowLimit: 20, Window: time.Minute, KeyBy: ratelimit.KeyByAccount,
+	}
+)
+
 func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := &Handler{service: service}
-	read := limiter.Middleware(ratelimit.PolicyRead)
-	write := limiter.Middleware(ratelimit.PolicyWrite)
+	read := limiter.Middleware(readPolicy)
+	refund := limiter.Middleware(refundPolicy)
 	authenticated.POST("/events/:id/refund",
-		authentication.RequireRole(authentication.RoleInternalAdmin), write, handler.refundEvent)
+		authentication.RequireRole(authentication.RoleInternalAdmin), refund, handler.refundEvent)
 	authenticated.GET("/refunds",
 		authentication.RequireRole(authentication.RoleUser, authentication.RoleInternalAdmin),
 		read, handler.listRefunds)

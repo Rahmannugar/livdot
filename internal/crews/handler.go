@@ -23,11 +23,23 @@ type Handler struct {
 	service ServiceAPI
 }
 
+// crew quotas are per account: browsing is cheap, editing is not.
+var (
+	readPolicy = ratelimit.Policy{
+		Name: "crews.read", Burst: 20, RefillPerSecond: 10,
+		WindowLimit: 120, Window: time.Minute, KeyBy: ratelimit.KeyByAccount,
+	}
+	writePolicy = ratelimit.Policy{
+		Name: "crews.write", Burst: 10, RefillPerSecond: 2,
+		WindowLimit: 30, Window: time.Minute, KeyBy: ratelimit.KeyByAccount,
+	}
+)
+
 func RegisterRoutes(public gin.IRoutes, authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	_ = public
 	handler := &Handler{service: service}
-	read := limiter.Middleware(ratelimit.PolicyRead)
-	write := limiter.Middleware(ratelimit.PolicyWrite)
+	read := limiter.Middleware(readPolicy)
+	write := limiter.Middleware(writePolicy)
 	authenticated.GET("/crews", authentication.RequireRole(authentication.RoleHost), read, handler.list)
 	authenticated.GET("/account/crews", authentication.RequireRole(authentication.RoleCrew), read, handler.get)
 	authenticated.PATCH("/account/crews", authentication.RequireRole(authentication.RoleCrew), write, handler.update)

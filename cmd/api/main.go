@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
+	authrepo "github.com/Rahmannugar/livdot/internal/authentication/repositories"
 	"github.com/Rahmannugar/livdot/internal/config"
 	"github.com/Rahmannugar/livdot/internal/crews"
 	crewsrepo "github.com/Rahmannugar/livdot/internal/crews/repositories"
@@ -114,8 +115,9 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure crews: %w", err)
 	}
+	directory := authrepo.NewAccountDirectory(databasePool)
 	eventService, err := events.NewService(
-		eventsrepo.NewEventStore(databasePool), crewService)
+		eventsrepo.NewEventStore(databasePool), crewService, directory)
 	if err != nil {
 		return fmt.Errorf("configure events: %w", err)
 	}
@@ -124,7 +126,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("configure payment provider: %w", err)
 	}
 	financeService, err := finance.NewService(
-		financerepo.NewFinanceStore(databasePool), paymentProvider)
+		financerepo.NewFinanceStore(databasePool), paymentProvider, directory)
 	if err != nil {
 		return fmt.Errorf("configure finance: %w", err)
 	}
@@ -132,6 +134,7 @@ func run(logger *slog.Logger) error {
 		ticketingrepo.NewTicketStore(databasePool),
 		paymentProvider,
 		financeService,
+		directory,
 	)
 	if err != nil {
 		return fmt.Errorf("configure ticketing: %w", err)

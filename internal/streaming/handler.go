@@ -22,16 +22,28 @@ type Handler struct {
 	service ServiceAPI
 }
 
+// stream control is rare; joins are frequent while a stream is live.
+var (
+	controlPolicy = ratelimit.Policy{
+		Name: "streaming.control", Burst: 5, RefillPerSecond: 1,
+		WindowLimit: 20, Window: time.Minute, KeyBy: ratelimit.KeyByAccount,
+	}
+	joinPolicy = ratelimit.Policy{
+		Name: "streaming.join", Burst: 5, RefillPerSecond: 1,
+		WindowLimit: 30, Window: time.Minute, KeyBy: ratelimit.KeyByAccount,
+	}
+)
+
 func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := &Handler{service: service}
-	write := limiter.Middleware(ratelimit.PolicyWrite)
-	join := limiter.Middleware(ratelimit.PolicyPurchase)
+	control := limiter.Middleware(controlPolicy)
+	join := limiter.Middleware(joinPolicy)
 	authenticated.POST("/events/:id/start",
-		authentication.RequireRole(authentication.RoleHost), write, handler.start)
+		authentication.RequireRole(authentication.RoleHost), control, handler.start)
 	authenticated.POST("/events/:id/end",
-		authentication.RequireRole(authentication.RoleHost), write, handler.end)
+		authentication.RequireRole(authentication.RoleHost), control, handler.end)
 	authenticated.POST("/events/:id/stream-failure",
-		authentication.RequireRole(authentication.RoleHost), write, handler.fail)
+		authentication.RequireRole(authentication.RoleHost), control, handler.fail)
 	authenticated.POST("/events/:id/join",
 		authentication.RequireRole(authentication.RoleUser), join, handler.join)
 }

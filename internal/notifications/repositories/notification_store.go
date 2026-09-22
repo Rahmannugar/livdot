@@ -22,31 +22,6 @@ func NewNotificationStore(pool *pgxpool.Pool) *NotificationStore {
 	return &NotificationStore{pool: pool}
 }
 
-// Enqueue inserts an email once. created=false means the idempotency key was
-// already used.
-func (store *NotificationStore) Enqueue(ctx context.Context, input notifications.EnqueueInput) (notifications.Notification, bool, error) {
-	id, err := uuid.NewV7()
-	if err != nil {
-		return notifications.Notification{}, false, fmt.Errorf("generate notification id: %w", err)
-	}
-	record, err := notificationsdb.New(store.pool).CreateEmailNotification(ctx, notificationsdb.CreateEmailNotificationParams{
-		ID:               id,
-		NotificationType: input.Type,
-		RecipientUserID:  optionalUUID(input.RecipientAccountID),
-		RecipientEmail:   input.RecipientEmail,
-		TemplateKey:      input.TemplateKey,
-		Payload:          input.Payload,
-		IdempotencyKey:   input.IdempotencyKey,
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return notifications.Notification{}, false, nil
-	}
-	if err != nil {
-		return notifications.Notification{}, false, fmt.Errorf("create email notification: %w", err)
-	}
-	return notification(record), true, nil
-}
-
 func (store *NotificationStore) Claim(ctx context.Context, limit int32) ([]notifications.Notification, error) {
 	records, err := notificationsdb.New(store.pool).ClaimPendingEmailNotifications(ctx, limit)
 	if err != nil {
@@ -109,15 +84,4 @@ func notification(record notificationsdb.EmailNotification) notifications.Notifi
 		Status:             string(record.Status),
 		AttemptCount:       record.AttemptCount,
 	}
-}
-
-func optionalUUID(value *string) pgtype.UUID {
-	if value == nil || *value == "" {
-		return pgtype.UUID{}
-	}
-	id, err := uuid.Parse(*value)
-	if err != nil {
-		return pgtype.UUID{}
-	}
-	return pgtype.UUID{Bytes: id, Valid: true}
 }

@@ -14,12 +14,12 @@ INSERT INTO events (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9)
 RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
           status, total_tickets, available_tickets, starts_at, ends_at,
-          cancelled_at, created_at, updated_at, crew_notified_at;
+          cancelled_at, created_at, updated_at;
 
 -- name: GetEvent :one
 SELECT id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
        status, total_tickets, available_tickets, starts_at, ends_at,
-       cancelled_at, created_at, updated_at, crew_notified_at
+       cancelled_at, created_at, updated_at
 FROM events
 WHERE id = $1;
 
@@ -35,7 +35,7 @@ WHERE e.id = $1;
 -- name: ListEvents :many
 SELECT id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
        status, total_tickets, available_tickets, starts_at, ends_at,
-       cancelled_at, created_at, updated_at, crew_notified_at
+       cancelled_at, created_at, updated_at
 FROM events
 WHERE (sqlc.narg('name')::text IS NULL OR name ILIKE '%' || sqlc.narg('name')::text || '%')
   AND (sqlc.narg('status')::event_status IS NULL OR status = sqlc.narg('status')::event_status)
@@ -81,7 +81,7 @@ WHERE id = $1
   AND $5 >= total_tickets - available_tickets
 RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
           status, total_tickets, available_tickets, starts_at, ends_at,
-          cancelled_at, created_at, updated_at, crew_notified_at;
+          cancelled_at, created_at, updated_at;
 
 -- name: CancelEvent :one
 UPDATE events
@@ -92,7 +92,7 @@ WHERE id = $1
   AND status = 'upcoming'
 RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
           status, total_tickets, available_tickets, starts_at, ends_at,
-          cancelled_at, created_at, updated_at, crew_notified_at;
+          cancelled_at, created_at, updated_at;
 
 -- name: ReserveEventTicket :one
 UPDATE events
@@ -103,7 +103,7 @@ WHERE id = $1
   AND available_tickets > 0
 RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
           status, total_tickets, available_tickets, starts_at, ends_at,
-          cancelled_at, created_at, updated_at, crew_notified_at;
+          cancelled_at, created_at, updated_at;
 
 -- name: UpdateEventStatus :one
 UPDATE events
@@ -113,19 +113,4 @@ SET status = $2,
 WHERE id = $1
 RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
           status, total_tickets, available_tickets, starts_at, ends_at,
-          cancelled_at, created_at, updated_at, crew_notified_at;
-
--- name: ListEventsAwaitingCrewNotice :many
-SELECT id, assigned_crew_id, name
-FROM events
-WHERE assigned_crew_id IS NOT NULL
-  AND crew_notified_at IS NULL
-ORDER BY created_at
-LIMIT $1;
-
--- name: MarkEventCrewNotified :one
-UPDATE events
-SET crew_notified_at = now()
-WHERE id = $1
-  AND crew_notified_at IS NULL
-RETURNING id, crew_notified_at;
+          cancelled_at, created_at, updated_at;

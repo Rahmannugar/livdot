@@ -12,10 +12,6 @@ import (
 
 	authrepo "github.com/Rahmannugar/livdot/internal/authentication/repositories"
 	"github.com/Rahmannugar/livdot/internal/config"
-	"github.com/Rahmannugar/livdot/internal/crews"
-	crewsrepo "github.com/Rahmannugar/livdot/internal/crews/repositories"
-	"github.com/Rahmannugar/livdot/internal/events"
-	eventsrepo "github.com/Rahmannugar/livdot/internal/events/repositories"
 	"github.com/Rahmannugar/livdot/internal/finance"
 	financerepo "github.com/Rahmannugar/livdot/internal/finance/repositories"
 	"github.com/Rahmannugar/livdot/internal/infra/cache"
@@ -27,6 +23,7 @@ import (
 	notificationsrepo "github.com/Rahmannugar/livdot/internal/notifications/repositories"
 	"github.com/Rahmannugar/livdot/internal/ticketing"
 	ticketingrepo "github.com/Rahmannugar/livdot/internal/ticketing/repositories"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -40,9 +37,7 @@ const (
 )
 
 type services struct {
-	events        *events.Service
 	ticketing     *ticketing.Service
-	finance       *finance.Service
 	notifications *notifications.Service
 }
 
@@ -90,32 +85,23 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	directory := authrepo.NewAccountDirectory(databasePool)
 	paymentProvider, err := payment.NewMock(cfg.Payment.Secret, cfg.Payment.BaseURL)
 	if err != nil {
 		return fmt.Errorf("configure payment provider: %w", err)
 	}
-	financeService, err := finance.NewService(financerepo.NewFinanceStore(databasePool), paymentProvider)
+	financeService, err := finance.NewService(
+		financerepo.NewFinanceStore(databasePool), paymentProvider, directory)
 	if err != nil {
 		return fmt.Errorf("configure finance: %w", err)
 	}
 	ticketingService, err := ticketing.NewService(
-		ticketingrepo.NewTicketStore(databasePool), paymentProvider, financeService)
+		ticketingrepo.NewTicketStore(databasePool), paymentProvider, financeService, directory)
 	if err != nil {
 		return fmt.Errorf("configure ticketing: %w", err)
 	}
-	crewService, err := crews.NewService(crewsrepo.NewCrewStore(databasePool))
-	if err != nil {
-		return fmt.Errorf("configure crews: %w", err)
-	}
-	eventService, err := events.NewService(eventsrepo.NewEventStore(databasePool), crewService)
-	if err != nil {
-		return fmt.Errorf("configure events: %w", err)
-	}
 	notificationService, err := notifications.NewService(
-		notificationsrepo.NewNotificationStore(databasePool),
-		email.NewLogSender(),
-		authrepo.NewAccountDirectory(databasePool),
-	)
+		notificationsrepo.NewNotificationStore(databasePool), email.NewLogSender())
 	if err != nil {
 		return fmt.Errorf("configure notifications: %w", err)
 	}
@@ -123,12 +109,13 @@ func run(logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	handlers := &services{
-		events:        eventService,
-		ticketing:     ticketingService,
-		finance:       financeService,
-		notifications: notificationService,
-	}
+	handlers := &services{ticketing: ticketingService, notifications: notificationService}
+
+	// producers fire pg_notify when they queue an email; the listener drains the
+	// queue on wake, and the ticker is the fallback.
+	wake := make(chan struct{}, 1)
+	go listen(ctx, logger, databasePool, wake)
+
 	logger.Info("worker started", "interval", cycleInterval.String())
 	ticker := time.NewTicker(cycleInterval)
 	defer ticker.Stop()
@@ -139,6 +126,8 @@ func run(logger *slog.Logger) error {
 			return nil
 		case <-ticker.C:
 			runCycle(ctx, logger, handlers)
+		case <-wake:
+			deliver(ctx, logger, handlers)
 		}
 	}
 }
@@ -170,18 +159,8 @@ func initialize(ctx context.Context, logger *slog.Logger, redisClient *redis.Cli
 	return startupLock.Release(context.Background())
 }
 
-// runCycle derives work from the durable domain rows: notify what changed, send
-// queued mail, and release lapsed reservations. Everything is idempotent, so a
-// repeated cycle never duplicates a side effect.
 func runCycle(ctx context.Context, logger *slog.Logger, handlers *services) {
-	notifyCrewAssignments(ctx, logger, handlers)
-	notifyTickets(ctx, logger, handlers)
-	notifyRefunds(ctx, logger, handlers)
-	if delivered, err := handlers.notifications.DeliverPending(ctx, batchSize); err != nil {
-		logger.Error("notification delivery failed", "error", err)
-	} else if delivered > 0 {
-		logger.Info("notifications delivered", "count", delivered)
-	}
+	deliver(ctx, logger, handlers)
 	if expired, err := handlers.ticketing.ExpireReservations(ctx, batchSize); err != nil {
 		logger.Error("reservation expiry failed", "error", err)
 	} else if expired > 0 {
@@ -189,68 +168,66 @@ func runCycle(ctx context.Context, logger *slog.Logger, handlers *services) {
 	}
 }
 
-func notifyCrewAssignments(ctx context.Context, logger *slog.Logger, handlers *services) {
-	notices, err := handlers.events.PendingCrewNotices(ctx, batchSize)
+func deliver(ctx context.Context, logger *slog.Logger, handlers *services) {
+	delivered, err := handlers.notifications.DeliverPending(ctx, batchSize)
 	if err != nil {
-		logger.Error("list crew notices failed", "error", err)
+		logger.Error("notification delivery failed", "error", err)
 		return
 	}
-	for _, notice := range notices {
-		err := handlers.notifications.EnqueueForAccount(ctx, notice.CrewID, "crew_assigned",
-			notifications.TemplateCrewAssigned, map[string]any{
-				"eventId":   notice.EventID,
-				"eventName": notice.EventName,
-			}, "event.assigned:"+notice.EventID)
+	if delivered > 0 {
+		logger.Info("notifications delivered", "count", delivered)
+	}
+}
+
+// listen holds one connection on the email channel and signals wake on every
+// notification, reconnecting with a small backoff if the connection drops.
+func listen(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool, wake chan<- struct{}) {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		connection, err := pool.Acquire(ctx)
 		if err != nil {
-			logger.Error("queue crew notice failed", "event_id", notice.EventID, "error", err)
+			if ctx.Err() != nil {
+				return
+			}
+			logger.Error("listen acquire failed", "error", err)
+			if !sleep(ctx, time.Second) {
+				return
+			}
 			continue
 		}
-		if err := handlers.events.MarkCrewNotified(ctx, notice.EventID); err != nil {
-			logger.Error("mark crew notified failed", "event_id", notice.EventID, "error", err)
+		if _, err := connection.Exec(ctx, "LISTEN "+notifications.Channel); err != nil {
+			connection.Release()
+			logger.Error("listen failed", "error", err)
+			if !sleep(ctx, time.Second) {
+				return
+			}
+			continue
+		}
+		logger.Info("listening for email notifications", "channel", notifications.Channel)
+		for {
+			if _, err := connection.Conn().WaitForNotification(ctx); err != nil {
+				connection.Release()
+				if ctx.Err() != nil {
+					return
+				}
+				logger.Error("notification wait failed", "error", err)
+				break
+			}
+			select {
+			case wake <- struct{}{}:
+			default:
+			}
 		}
 	}
 }
 
-func notifyTickets(ctx context.Context, logger *slog.Logger, handlers *services) {
-	notices, err := handlers.ticketing.PendingTicketNotices(ctx, batchSize)
-	if err != nil {
-		logger.Error("list ticket notices failed", "error", err)
-		return
-	}
-	for _, notice := range notices {
-		err := handlers.notifications.EnqueueForAccount(ctx, notice.UserID, "ticket_issued",
-			notifications.TemplateTicketReceipt, map[string]any{
-				"eventId":  notice.EventID,
-				"ticketId": notice.TicketID,
-			}, "ticket.issued:"+notice.TicketID)
-		if err != nil {
-			logger.Error("queue ticket notice failed", "ticket_id", notice.TicketID, "error", err)
-			continue
-		}
-		if err := handlers.ticketing.MarkTicketNotified(ctx, notice.TicketID); err != nil {
-			logger.Error("mark ticket notified failed", "ticket_id", notice.TicketID, "error", err)
-		}
-	}
-}
-
-func notifyRefunds(ctx context.Context, logger *slog.Logger, handlers *services) {
-	notices, err := handlers.finance.PendingRefundNotices(ctx, batchSize)
-	if err != nil {
-		logger.Error("list refund notices failed", "error", err)
-		return
-	}
-	for _, notice := range notices {
-		err := handlers.notifications.EnqueueForAccount(ctx, notice.UserID, "refund_completed",
-			notifications.TemplateRefundReceipt, map[string]any{
-				"eventId":     notice.EventID,
-				"amountMinor": notice.AmountMinor,
-			}, "refund.completed:"+notice.RefundID)
-		if err != nil {
-			logger.Error("queue refund notice failed", "refund_id", notice.RefundID, "error", err)
-			continue
-		}
-		if err := handlers.finance.MarkRefundNotified(ctx, notice.RefundID); err != nil {
-			logger.Error("mark refund notified failed", "refund_id", notice.RefundID, "error", err)
-		}
+func sleep(ctx context.Context, delay time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(delay):
+		return true
 	}
 }

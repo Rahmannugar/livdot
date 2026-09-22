@@ -20,10 +20,22 @@ type Handler struct {
 	service ServiceAPI
 }
 
+// buying holds a slot, so it is the tightest quota; ticket reads are cheap.
+var (
+	purchasePolicy = ratelimit.Policy{
+		Name: "ticketing.purchase", Burst: 3, RefillPerSecond: 0.5,
+		WindowLimit: 10, Window: time.Minute, KeyBy: ratelimit.KeyByAccount,
+	}
+	readPolicy = ratelimit.Policy{
+		Name: "ticketing.read", Burst: 20, RefillPerSecond: 10,
+		WindowLimit: 120, Window: time.Minute, KeyBy: ratelimit.KeyByAccount,
+	}
+)
+
 func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := &Handler{service: service}
-	purchase := limiter.Middleware(ratelimit.PolicyPurchase)
-	read := limiter.Middleware(ratelimit.PolicyRead)
+	purchase := limiter.Middleware(purchasePolicy)
+	read := limiter.Middleware(readPolicy)
 	authenticated.POST("/events/:id/purchase",
 		authentication.RequireRole(authentication.RoleUser), purchase, handler.purchase)
 	authenticated.GET("/tickets/:id",

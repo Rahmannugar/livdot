@@ -8,6 +8,7 @@ import (
 
 	"github.com/Rahmannugar/livdot/internal/finance"
 	financedb "github.com/Rahmannugar/livdot/internal/finance/repositories/generated"
+	"github.com/Rahmannugar/livdot/internal/notifications"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -60,9 +61,9 @@ func (store *FinanceStore) CreateRefund(ctx context.Context, input finance.Refun
 	return refundFromRecord(record), true, nil
 }
 
-// SettleRefund marks the refund and its purchase refunded and records the ledger
-// movement in one transaction.
-func (store *FinanceStore) SettleRefund(ctx context.Context, refundID, providerRefundID string) (finance.Refund, error) {
+// SettleRefund marks the refund and its purchase refunded, records the ledger
+// movement, and queues the receipt in one transaction.
+func (store *FinanceStore) SettleRefund(ctx context.Context, refundID, providerRefundID, recipientEmail string) (finance.Refund, error) {
 	id, err := uuid.Parse(refundID)
 	if err != nil {
 		return finance.Refund{}, finance.ErrNotFound
@@ -100,41 +101,22 @@ func (store *FinanceStore) SettleRefund(ctx context.Context, refundID, providerR
 	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return finance.Refund{}, fmt.Errorf("create ledger entry: %w", err)
 	}
+	if recipientEmail != "" {
+		// queue the receipt in the same tx so it commits with the refund.
+		if _, err := notifications.NewQueue(tx).Enqueue(ctx, notifications.RefundCompleted(
+			recipientEmail,
+			record.UserID.String(),
+			record.EventID.String(),
+			record.ID.String(),
+			record.AmountMinor,
+		)); err != nil {
+			return finance.Refund{}, fmt.Errorf("queue refund receipt: %w", err)
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return finance.Refund{}, fmt.Errorf("commit refund settlement: %w", err)
 	}
 	return refundFromRecord(record), nil
-}
-
-func (store *FinanceStore) PendingRefundNotices(ctx context.Context, limit int32) ([]finance.RefundNotice, error) {
-	records, err := financedb.New(store.pool).ListUnnotifiedRefunds(ctx, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list unnotified refunds: %w", err)
-	}
-	notices := make([]finance.RefundNotice, 0, len(records))
-	for _, record := range records {
-		notices = append(notices, finance.RefundNotice{
-			RefundID:    record.ID.String(),
-			UserID:      record.UserID.String(),
-			EventID:     record.EventID.String(),
-			AmountMinor: record.AmountMinor,
-		})
-	}
-	return notices, nil
-}
-
-func (store *FinanceStore) MarkRefundNotified(ctx context.Context, refundID string) error {
-	id, err := uuid.Parse(refundID)
-	if err != nil {
-		return finance.ErrInvalidInput
-	}
-	if _, err := financedb.New(store.pool).MarkRefundNotified(ctx, id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-		return fmt.Errorf("mark refund notified: %w", err)
-	}
-	return nil
 }
 
 func (store *FinanceStore) PaidPurchasesForEvent(ctx context.Context, eventID string) ([]finance.PurchaseForRefund, error) {

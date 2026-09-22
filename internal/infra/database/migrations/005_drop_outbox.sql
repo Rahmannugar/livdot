@@ -1,7 +1,3 @@
-ALTER TABLE tickets ADD COLUMN notified_at timestamptz;
-ALTER TABLE event_refunds ADD COLUMN notified_at timestamptz;
-ALTER TABLE events ADD COLUMN crew_notified_at timestamptz;
-
 DROP INDEX outbox_events_ready_idx;
 DROP TABLE outbox_events;
 DROP TYPE outbox_status;
@@ -30,7 +26,3 @@ CREATE TABLE outbox_events (
 CREATE INDEX outbox_events_ready_idx
     ON outbox_events (next_attempt_at, created_at)
     WHERE status IN ('pending', 'processing');
-
-ALTER TABLE events DROP COLUMN crew_notified_at;
-ALTER TABLE event_refunds DROP COLUMN notified_at;
-ALTER TABLE tickets DROP COLUMN notified_at;

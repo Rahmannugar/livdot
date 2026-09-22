@@ -88,11 +88,13 @@ type ReserveInput struct {
 	ExpiresAt      time.Time
 }
 
-// what the store writes when a paid charge settles.
+// what the store writes when a paid charge settles. RecipientEmail is resolved
+// before the transaction so the receipt can be queued inside it.
 type SettleInput struct {
 	PurchaseID        string
 	ProviderPaymentID string
 	MemberID          string
+	RecipientEmail    string
 }
 
 // the outcome of settling a paid charge. Expired is true when the money landed
@@ -118,11 +120,9 @@ type Refunder interface {
 	RefundExpiredPurchase(ctx context.Context, purchase RefundablePurchase) error
 }
 
-// an issued ticket that still needs its receipt email.
-type TicketNotice struct {
-	TicketID string
-	UserID   string
-	EventID  string
+// resolves a recipient email so a receipt can be queued inside the transaction.
+type Directory interface {
+	AccountEmail(ctx context.Context, accountID string) (string, error)
 }
 
 // persistence port owned by the ticketing domain.
@@ -138,18 +138,17 @@ type Store interface {
 	FailAndRelease(ctx context.Context, purchaseID string) (Purchase, error)
 	TicketByID(ctx context.Context, id string) (Ticket, error)
 	ExpireReservations(ctx context.Context, limit int32) (int, error)
-	PendingTicketNotices(ctx context.Context, limit int32) ([]TicketNotice, error)
-	MarkTicketNotified(ctx context.Context, ticketID string) error
 }
 
 type Service struct {
-	store    Store
-	provider payment.Provider
-	refunder Refunder
-	now      func() time.Time
+	store     Store
+	provider  payment.Provider
+	refunder  Refunder
+	directory Directory
+	now       func() time.Time
 }
 
-func NewService(store Store, provider payment.Provider, refunder Refunder) (*Service, error) {
+func NewService(store Store, provider payment.Provider, refunder Refunder, directory Directory) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("ticketing store is required")
 	}
@@ -158,6 +157,9 @@ func NewService(store Store, provider payment.Provider, refunder Refunder) (*Ser
 	}
 	if refunder == nil {
 		return nil, fmt.Errorf("refunder is required")
+	}
+	if directory == nil {
+		return nil, fmt.Errorf("recipient directory is required")
 	}
 	return &Service{store: store, provider: provider, refunder: refunder, now: time.Now}, nil
 }
@@ -268,18 +270,6 @@ func (service *Service) ExpireReservations(ctx context.Context, limit int32) (in
 	return service.store.ExpireReservations(ctx, limit)
 }
 
-// PendingTicketNotices lists issued tickets whose receipt was not sent yet.
-func (service *Service) PendingTicketNotices(ctx context.Context, limit int32) ([]TicketNotice, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	return service.store.PendingTicketNotices(ctx, limit)
-}
-
-func (service *Service) MarkTicketNotified(ctx context.Context, ticketID string) error {
-	return service.store.MarkTicketNotified(ctx, ticketID)
-}
-
 // Handles claims the charge webhook types for the shared webhook dispatcher.
 func (service *Service) Handles(eventType string) bool {
 	switch eventType {
@@ -310,10 +300,22 @@ func (service *Service) settlePaid(ctx context.Context, event payment.WebhookEve
 	if err != nil {
 		return fmt.Errorf("generate member id: %w", err)
 	}
+	// resolve the receipt recipient before the transaction so the email row can
+	// be written inside the settlement.
+	current, err := service.store.FindPurchaseByID(ctx, event.Reference)
+	if err != nil {
+		return err
+	}
+	recipient, err := service.directory.AccountEmail(ctx, current.UserID)
+	if err != nil {
+		// the ticket still settles; a missing address must not block access.
+		recipient = ""
+	}
 	result, err := service.store.SettlePaid(ctx, SettleInput{
 		PurchaseID:        event.Reference,
 		ProviderPaymentID: event.ProviderReference,
 		MemberID:          memberID.String(),
+		RecipientEmail:    recipient,
 	})
 	if err != nil {
 		return err

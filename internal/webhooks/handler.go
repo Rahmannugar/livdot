@@ -3,6 +3,7 @@ package webhooks
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
@@ -10,6 +11,13 @@ import (
 )
 
 const signatureHeader = "X-Paystack-Signature"
+
+// provider callbacks are per IP and bursty, so the quota is higher than a user
+// route but still bounded.
+var ingestPolicy = ratelimit.Policy{
+	Name: "webhooks.ingest", Burst: 20, RefillPerSecond: 5,
+	WindowLimit: 120, Window: time.Minute, KeyBy: ratelimit.KeyByIP,
+}
 
 // RegisterRoutes mounts the provider callback endpoint. It stays public because
 // authenticity comes from the provider signature, not a session.
@@ -26,7 +34,7 @@ func RegisterRoutes(public gin.IRoutes, service *Service, limiter *ratelimit.Lim
 		}
 		ctx.JSON(http.StatusOK, gin.H{"status": "received"})
 	}
-	public.POST("/webhooks/payments", limiter.Middleware(ratelimit.PolicyWebhook), handle)
+	public.POST("/webhooks/payments", limiter.Middleware(ingestPolicy), handle)
 }
 
 func writeWebhookError(ctx *gin.Context, err error) {

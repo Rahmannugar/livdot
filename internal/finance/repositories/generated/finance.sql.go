@@ -95,35 +95,15 @@ RETURNING refund.id, refund.event_id, refund.user_id, refund.purchase_id,
           refund.last_error, refund.processed_at, refund.retried_at, refund.refunded_at
 `
 
-type ClaimPendingRefundsRow struct {
-	ID               uuid.UUID
-	EventID          uuid.UUID
-	UserID           uuid.UUID
-	PurchaseID       uuid.UUID
-	AmountMinor      int64
-	Status           RefundStatus
-	Provider         string
-	ProviderRefundID *string
-	LinkedRefundID   pgtype.UUID
-	IdempotencyKey   string
-	AttemptCount     int32
-	NextAttemptAt    pgtype.Timestamptz
-	LockedAt         pgtype.Timestamptz
-	LastError        *string
-	ProcessedAt      pgtype.Timestamptz
-	RetriedAt        pgtype.Timestamptz
-	RefundedAt       pgtype.Timestamptz
-}
-
-func (q *Queries) ClaimPendingRefunds(ctx context.Context, limit int32) ([]ClaimPendingRefundsRow, error) {
+func (q *Queries) ClaimPendingRefunds(ctx context.Context, limit int32) ([]EventRefund, error) {
 	rows, err := q.db.Query(ctx, claimPendingRefunds, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ClaimPendingRefundsRow
+	var items []EventRefund
 	for rows.Next() {
-		var i ClaimPendingRefundsRow
+		var i EventRefund
 		if err := rows.Scan(
 			&i.ID,
 			&i.EventID,
@@ -212,7 +192,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (purchase_id) DO NOTHING
 RETURNING id, event_id, user_id, purchase_id, amount_minor, status, provider,
           provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
-          next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at, notified_at
+          next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at
 `
 
 type CreateEventRefundParams struct {
@@ -254,7 +234,6 @@ func (q *Queries) CreateEventRefund(ctx context.Context, arg CreateEventRefundPa
 		&i.ProcessedAt,
 		&i.RetriedAt,
 		&i.RefundedAt,
-		&i.NotifiedAt,
 	)
 	return i, err
 }
@@ -384,7 +363,7 @@ func (q *Queries) GetPayoutByID(ctx context.Context, id uuid.UUID) (EventPayout,
 const getRefundByID = `-- name: GetRefundByID :one
 SELECT id, event_id, user_id, purchase_id, amount_minor, status, provider,
        provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
-       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at, notified_at
+       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at
 FROM event_refunds
 WHERE id = $1
 `
@@ -410,7 +389,6 @@ func (q *Queries) GetRefundByID(ctx context.Context, id uuid.UUID) (EventRefund,
 		&i.ProcessedAt,
 		&i.RetriedAt,
 		&i.RefundedAt,
-		&i.NotifiedAt,
 	)
 	return i, err
 }
@@ -523,7 +501,7 @@ func (q *Queries) ListPayouts(ctx context.Context, arg ListPayoutsParams) ([]Eve
 const listRefunds = `-- name: ListRefunds :many
 SELECT id, event_id, user_id, purchase_id, amount_minor, status, provider,
        provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
-       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at, notified_at
+       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at
 FROM event_refunds
 WHERE ($1::uuid IS NULL OR event_id = $1::uuid)
   AND ($2::uuid IS NULL OR user_id = $2::uuid)
@@ -571,48 +549,6 @@ func (q *Queries) ListRefunds(ctx context.Context, arg ListRefundsParams) ([]Eve
 			&i.ProcessedAt,
 			&i.RetriedAt,
 			&i.RefundedAt,
-			&i.NotifiedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listUnnotifiedRefunds = `-- name: ListUnnotifiedRefunds :many
-SELECT id, event_id, user_id, amount_minor
-FROM event_refunds
-WHERE status = 'refunded'
-  AND notified_at IS NULL
-ORDER BY refunded_at
-LIMIT $1
-`
-
-type ListUnnotifiedRefundsRow struct {
-	ID          uuid.UUID
-	EventID     uuid.UUID
-	UserID      uuid.UUID
-	AmountMinor int64
-}
-
-func (q *Queries) ListUnnotifiedRefunds(ctx context.Context, limit int32) ([]ListUnnotifiedRefundsRow, error) {
-	rows, err := q.db.Query(ctx, listUnnotifiedRefunds, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListUnnotifiedRefundsRow
-	for rows.Next() {
-		var i ListUnnotifiedRefundsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.EventID,
-			&i.UserID,
-			&i.AmountMinor,
 		); err != nil {
 			return nil, err
 		}
@@ -704,26 +640,6 @@ func (q *Queries) MarkPurchaseRefunded(ctx context.Context, id uuid.UUID) (Event
 	return i, err
 }
 
-const markRefundNotified = `-- name: MarkRefundNotified :one
-UPDATE event_refunds
-SET notified_at = now()
-WHERE id = $1
-  AND notified_at IS NULL
-RETURNING id, notified_at
-`
-
-type MarkRefundNotifiedRow struct {
-	ID         uuid.UUID
-	NotifiedAt pgtype.Timestamptz
-}
-
-func (q *Queries) MarkRefundNotified(ctx context.Context, id uuid.UUID) (MarkRefundNotifiedRow, error) {
-	row := q.db.QueryRow(ctx, markRefundNotified, id)
-	var i MarkRefundNotifiedRow
-	err := row.Scan(&i.ID, &i.NotifiedAt)
-	return i, err
-}
-
 const markRefunded = `-- name: MarkRefunded :one
 UPDATE event_refunds
 SET status = 'refunded',
@@ -735,7 +651,7 @@ WHERE id = $1
   AND status = 'processing'
 RETURNING id, event_id, user_id, purchase_id, amount_minor, status, provider,
           provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
-          next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at, notified_at
+          next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at
 `
 
 type MarkRefundedParams struct {
@@ -764,7 +680,6 @@ func (q *Queries) MarkRefunded(ctx context.Context, arg MarkRefundedParams) (Eve
 		&i.ProcessedAt,
 		&i.RetriedAt,
 		&i.RefundedAt,
-		&i.NotifiedAt,
 	)
 	return i, err
 }

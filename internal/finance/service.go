@@ -92,12 +92,9 @@ type PurchaseForRefund struct {
 	ProviderPaymentID *string
 }
 
-// a completed refund that still needs its receipt email.
-type RefundNotice struct {
-	RefundID    string
-	UserID      string
-	EventID     string
-	AmountMinor int64
+// resolves a recipient email so a receipt can be queued inside the transaction.
+type Directory interface {
+	AccountEmail(ctx context.Context, accountID string) (string, error)
 }
 
 // the event facts finance needs for a payout.
@@ -144,7 +141,7 @@ type PayoutPage struct {
 // persistence port owned by the finance domain.
 type Store interface {
 	CreateRefund(ctx context.Context, input RefundInput) (Refund, bool, error)
-	SettleRefund(ctx context.Context, refundID, providerRefundID string) (Refund, error)
+	SettleRefund(ctx context.Context, refundID, providerRefundID, recipientEmail string) (Refund, error)
 	PaidPurchasesForEvent(ctx context.Context, eventID string) ([]PurchaseForRefund, error)
 	SumPaidPurchases(ctx context.Context, eventID string) (int64, error)
 	SumRefundedPurchases(ctx context.Context, eventID string) (int64, error)
@@ -152,8 +149,6 @@ type Store interface {
 	EventForFinance(ctx context.Context, eventID string) (Event, error)
 	RefundByID(ctx context.Context, id string) (Refund, error)
 	Refunds(ctx context.Context, filter RefundFilter) ([]Refund, error)
-	PendingRefundNotices(ctx context.Context, limit int32) ([]RefundNotice, error)
-	MarkRefundNotified(ctx context.Context, refundID string) error
 	CreatePayout(ctx context.Context, input PayoutInput) (Payout, bool, error)
 	MarkPayoutPaid(ctx context.Context, payoutID, providerPayoutID string) (Payout, error)
 	PayoutByID(ctx context.Context, id string) (Payout, error)
@@ -162,19 +157,32 @@ type Store interface {
 }
 
 type Service struct {
-	store    Store
-	provider payment.Provider
-	now      func() time.Time
+	store     Store
+	provider  payment.Provider
+	directory Directory
+	now       func() time.Time
 }
 
-func NewService(store Store, provider payment.Provider) (*Service, error) {
+func NewService(store Store, provider payment.Provider, directory Directory) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("finance store is required")
 	}
 	if provider == nil {
 		return nil, fmt.Errorf("payment provider is required")
 	}
-	return &Service{store: store, provider: provider, now: time.Now}, nil
+	if directory == nil {
+		return nil, fmt.Errorf("recipient directory is required")
+	}
+	return &Service{store: store, provider: provider, directory: directory, now: time.Now}, nil
+}
+
+// recipientEmail is best-effort: a missing address must not block a refund.
+func (service *Service) recipientEmail(ctx context.Context, accountID string) string {
+	value, err := service.directory.AccountEmail(ctx, accountID)
+	if err != nil {
+		return ""
+	}
+	return value
 }
 
 // RefundExpiredPurchase refunds a charge whose reservation lapsed before the
@@ -196,7 +204,7 @@ func (service *Service) RefundExpiredPurchase(ctx context.Context, purchase tick
 		return nil
 	}
 	providerPaymentID := purchase.ProviderPaymentID
-	return service.settleRefund(ctx, refund, &providerPaymentID)
+	return service.settleRefund(ctx, refund, &providerPaymentID, service.recipientEmail(ctx, purchase.UserID))
 }
 
 // RefundEvent refunds every paid purchase on an event. CreateRefund is unique
@@ -233,7 +241,7 @@ func (service *Service) RefundEvent(ctx context.Context, eventID string, automat
 		if !created {
 			continue
 		}
-		if err := service.settleRefund(ctx, refund, purchase.ProviderPaymentID); err != nil {
+		if err := service.settleRefund(ctx, refund, purchase.ProviderPaymentID, service.recipientEmail(ctx, purchase.UserID)); err != nil {
 			return refunded, err
 		}
 		refunded++
@@ -332,7 +340,7 @@ func (service *Service) Payouts(ctx context.Context, filter PayoutFilter) (Payou
 	return payoutPage(pageSize, payouts), nil
 }
 
-func (service *Service) settleRefund(ctx context.Context, refund Refund, providerPaymentID *string) error {
+func (service *Service) settleRefund(ctx context.Context, refund Refund, providerPaymentID *string, recipientEmail string) error {
 	providerReference := ""
 	if providerPaymentID != nil {
 		providerReference = *providerPaymentID
@@ -347,21 +355,9 @@ func (service *Service) settleRefund(ctx context.Context, refund Refund, provide
 	if err != nil {
 		return fmt.Errorf("initiate refund: %w", err)
 	}
-	// settle the refund, the purchase, and the ledger row in one transaction.
-	_, err = service.store.SettleRefund(ctx, refund.ID, result.ProviderReference)
+	// settle the refund, the purchase, the ledger row, and the receipt in one tx.
+	_, err = service.store.SettleRefund(ctx, refund.ID, result.ProviderReference, recipientEmail)
 	return err
-}
-
-// PendingRefundNotices lists completed refunds whose receipt was not sent yet.
-func (service *Service) PendingRefundNotices(ctx context.Context, limit int32) ([]RefundNotice, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	return service.store.PendingRefundNotices(ctx, limit)
-}
-
-func (service *Service) MarkRefundNotified(ctx context.Context, refundID string) error {
-	return service.store.MarkRefundNotified(ctx, refundID)
 }
 
 func normalizeFilter(pageSize *int32, cursor **string) {

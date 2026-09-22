@@ -227,5 +227,4 @@ type Ticket struct {
 	ReservationExpiresAt pgtype.Timestamptz
 	IssuedAt             pgtype.Timestamptz
 	RevokedAt            pgtype.Timestamptz
-	NotifiedAt           pgtype.Timestamptz
 }

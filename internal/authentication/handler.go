@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/Rahmannugar/authlier/emailpassword"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
@@ -23,16 +24,30 @@ func NewHandler(service ServiceAPI) *Handler {
 	return &Handler{service: service}
 }
 
+// auth quotas are per IP: sign-up is tighter than sign-in because it also
+// writes an account.
+var (
+	signUpPolicy = ratelimit.Policy{
+		Name: "auth.signup", Burst: 3, RefillPerSecond: 0.2,
+		WindowLimit: 30, Window: time.Minute, KeyBy: ratelimit.KeyByIP,
+	}
+	signInPolicy = ratelimit.Policy{
+		Name: "auth.signin", Burst: 5, RefillPerSecond: 0.5,
+		WindowLimit: 20, Window: time.Minute, KeyBy: ratelimit.KeyByIP,
+	}
+)
+
 func RegisterRoutes(router gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := NewHandler(service)
-	guard := limiter.Middleware(ratelimit.PolicyAuth)
-	router.POST("/api/signup/host", guard, handler.signup(RoleHost))
-	router.POST("/api/signin/host", guard, handler.signin(RoleHost))
-	router.POST("/api/signup/crew", guard, handler.signup(RoleCrew))
-	router.POST("/api/signin/crew", guard, handler.signin(RoleCrew))
-	router.POST("/api/signup/user", guard, handler.signup(RoleUser))
-	router.POST("/api/signin/user", guard, handler.signin(RoleUser))
-	router.POST("/api/signin/internal", guard, handler.signin(RoleInternalAdmin))
+	signUp := limiter.Middleware(signUpPolicy)
+	signIn := limiter.Middleware(signInPolicy)
+	router.POST("/api/signup/host", signUp, handler.signup(RoleHost))
+	router.POST("/api/signin/host", signIn, handler.signin(RoleHost))
+	router.POST("/api/signup/crew", signUp, handler.signup(RoleCrew))
+	router.POST("/api/signin/crew", signIn, handler.signin(RoleCrew))
+	router.POST("/api/signup/user", signUp, handler.signup(RoleUser))
+	router.POST("/api/signin/user", signIn, handler.signin(RoleUser))
+	router.POST("/api/signin/internal", signIn, handler.signin(RoleInternalAdmin))
 }
 
 type credentialRequest struct {

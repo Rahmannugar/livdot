@@ -5,13 +5,6 @@ import (
 	"strings"
 )
 
-// template keys shared by the emitters and the registry.
-const (
-	TemplateTicketReceipt = "ticket_receipt"
-	TemplateRefundReceipt = "refund_receipt"
-	TemplateCrewAssigned  = "crew_assigned"
-)
-
 // a rendered email template. {{key}} placeholders come from the payload.
 type template struct {
 	subject string
