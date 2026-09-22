@@ -19,8 +19,10 @@ document defines the exact schemas.
 | POST | `/api/signup/user` | public | Register a viewer |
 | POST | `/api/signin/user` | public | Sign in a viewer |
 | POST | `/api/signin/internal` | public | Sign in an internal admin |
+| POST | `/api/signout` | authenticated | Revoke the presented session token |
 
-Sign-up and sign-in return `{ accountId, email, token, expiresAt }`.
+Sign-up and sign-in return `{ accountId, email, token, expiresAt }`. Sign-out is
+idempotent and returns `204`.
 
 ## Account and crews
 

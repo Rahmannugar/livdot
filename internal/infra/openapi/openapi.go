@@ -130,6 +130,8 @@ func responseDescription(status string) string {
 	switch status {
 	case "200", "201", "202":
 		return "success"
+	case "204":
+		return "no content"
 	case "400":
 		return "invalid request"
 	case "401":

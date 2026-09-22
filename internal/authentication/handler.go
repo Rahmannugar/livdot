@@ -14,6 +14,7 @@ import (
 type ServiceAPI interface {
 	Register(ctx context.Context, role Role, credentials Credentials) (Result, error)
 	SignIn(ctx context.Context, role Role, credentials Credentials) (Result, error)
+	Revoke(ctx context.Context, rawToken string) error
 }
 
 type Handler struct {
@@ -35,6 +36,10 @@ var (
 		Name: "auth.signin", Burst: 5, RefillPerSecond: 0.5,
 		WindowLimit: 20, Window: time.Minute, KeyBy: ratelimit.KeyByIP,
 	}
+	signOutPolicy = ratelimit.Policy{
+		Name: "auth.signout", Burst: 10, RefillPerSecond: 2,
+		WindowLimit: 60, Window: time.Minute, KeyBy: ratelimit.KeyByIP,
+	}
 )
 
 func RegisterRoutes(router gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
@@ -48,6 +53,22 @@ func RegisterRoutes(router gin.IRoutes, service ServiceAPI, limiter *ratelimit.L
 	router.POST("/api/signup/user", signUp, handler.signup(RoleUser))
 	router.POST("/api/signin/user", signIn, handler.signin(RoleUser))
 	router.POST("/api/signin/internal", signIn, handler.signin(RoleInternalAdmin))
+	router.POST("/api/signout", limiter.Middleware(signOutPolicy), handler.signout)
+}
+
+// signout revokes the presented token. It is idempotent: an absent or already
+// revoked token still returns 204.
+func (handler *Handler) signout(ctx *gin.Context) {
+	token, ok := bearerToken(ctx)
+	if !ok {
+		ctx.Status(http.StatusNoContent)
+		return
+	}
+	if err := handler.service.Revoke(ctx.Request.Context(), token); err != nil {
+		writeAuthError(ctx, err)
+		return
+	}
+	ctx.Status(http.StatusNoContent)
 }
 
 type credentialRequest struct {

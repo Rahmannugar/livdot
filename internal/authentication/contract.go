@@ -47,4 +47,15 @@ func RegisterContract(registry *openapi.Registry) {
 	signIn("signinCrew", "/api/signin/crew")
 	signIn("signinUser", "/api/signin/user")
 	signIn("signinInternal", "/api/signin/internal")
+
+	registry.Add(openapi.Operation{
+		Method: "post", Path: "/api/signout", OperationID: "signout",
+		Summary: "Revoke the presented session token", Tag: "authentication",
+		Security: true,
+		Responses: map[string]any{
+			"204": map[string]any{},
+			"401": openapi.Ref("Error"),
+			"429": openapi.Ref("Error"),
+		},
+	})
 }

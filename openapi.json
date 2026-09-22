@@ -2667,6 +2667,50 @@
         ]
       }
     },
+    "/api/signout": {
+      "post": {
+        "operationId": "signout",
+        "responses": {
+          "204": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "no content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "rate limited"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Revoke the presented session token",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
     "/api/signup/crew": {
       "post": {
         "operationId": "signupCrew",
