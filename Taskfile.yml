@@ -30,9 +30,10 @@ tasks:
       - gofmt -w .
 
   generate:
-    desc: Generate type-safe PostgreSQL query code
+    desc: Generate type-safe PostgreSQL queries and the OpenAPI document
     cmds:
       - go tool sqlc generate
+      - go run ./cmd/openapi
 
   migration-new:
     desc: Create a new Tern migration; pass the name after --
@@ -58,6 +59,8 @@ tasks:
     desc: Validate formatting, tests, vet, and builds
     cmds:
       - go tool sqlc generate
+      - go run ./cmd/openapi
+      - git diff --exit-code -- openapi.json
       - test -z "$(gofmt -l .)"
       - go test ./...
       - go vet ./...

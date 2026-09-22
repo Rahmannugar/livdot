@@ -94,6 +94,7 @@ func run(logger *slog.Logger) error {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	health.RegisterRoutes(router, databasePool, redisClient)
+	registerDocs(router)
 
 	limiter, err := ratelimit.New(redisClient, "livdot:ratelimit", accountSubject)
 	if err != nil {
