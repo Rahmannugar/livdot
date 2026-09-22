@@ -19,9 +19,8 @@ import (
 
 type registrationDetailsKey struct{}
 
-// RegistrationDetails carries product profile data through Authlier's
-// email/password registration primitive without exposing it to the primitive's
-// storage contract.
+// carries product profile data through authlier's registration primitive without
+// leaking it into that primitive's storage contract.
 type RegistrationDetails struct {
 	FullName string
 	CrewName string
@@ -148,7 +147,7 @@ func (store *AccountStore) FindAccountByID(ctx context.Context, accountID uuid.U
 	return authenticationdb.New(store.pool).FindAccountByID(ctx, accountID)
 }
 
-// CreateInternalAdmin is intentionally repository-only; no HTTP handler calls it.
+// repository-only; no HTTP handler calls this.
 func (store *AccountStore) CreateInternalAdmin(
 	ctx context.Context,
 	email string,

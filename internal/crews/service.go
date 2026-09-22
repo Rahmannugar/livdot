@@ -32,7 +32,7 @@ const (
 	AvailabilityUnavailable Availability = "unavailable"
 )
 
-// Profile is a crew organisation account as exposed by the crews domain.
+// a crew org account as the crews domain sees it.
 type Profile struct {
 	AccountID    string
 	Name         string
@@ -41,8 +41,7 @@ type Profile struct {
 	UpdatedAt    time.Time
 }
 
-// Filter narrows the crews that a host can browse for event assignment.
-// Cursor is the decoded keyset position returned by a previous page.
+// narrows the crew list a host browses for assignment.
 type Filter struct {
 	Name         string
 	Availability Availability
@@ -50,20 +49,19 @@ type Filter struct {
 	PageSize     int32
 }
 
-// Cursor is the keyset position of the last profile in a page, ordered by
-// (crew_name, account_id).
+// keyset position of the last profile in a page: (crew_name, account_id).
 type Cursor struct {
 	Name      string
 	AccountID string
 }
 
-// Page is one keyset page of crew profiles.
+// one keyset page of crew profiles.
 type Page struct {
 	Profiles   []Profile
 	NextCursor string
 }
 
-// UpdateProfile is the fully resolved profile written by the store.
+// the fully resolved profile written by the store.
 type UpdateProfile struct {
 	AccountID    string
 	Name         string
@@ -71,14 +69,14 @@ type UpdateProfile struct {
 	Availability Availability
 }
 
-// UpdateInput carries the optional fields of a crew profile patch.
+// optional fields of a crew profile patch.
 type UpdateInput struct {
 	Name         *string
 	List         json.RawMessage
 	Availability *Availability
 }
 
-// Store is the persistence port owned by the crews domain.
+// persistence port owned by the crews domain.
 type Store interface {
 	Get(ctx context.Context, accountID string) (Profile, error)
 	Update(ctx context.Context, update UpdateProfile) (Profile, error)
@@ -159,8 +157,8 @@ func (service *Service) List(ctx context.Context, filter Filter) (Page, error) {
 		filter.PageSize = maxListLimit
 	}
 
-	// Fetch one extra row to detect whether a further page exists. A short page
-	// ends the listing, so no cursor is emitted.
+	// fetch one extra row to know if there's another page. a short page means
+	// the listing ended, so no cursor is returned.
 	fetchSize := filter.PageSize + 1
 	profiles, err := service.store.List(ctx, Filter{
 		Name:         filter.Name,
@@ -180,7 +178,7 @@ func (service *Service) List(ctx context.Context, filter Filter) (Page, error) {
 	return page, nil
 }
 
-// Exists reports whether a crew account can be assigned to an event.
+// reports whether a crew account can be assigned to an event.
 func (service *Service) Exists(ctx context.Context, accountID string) (bool, error) {
 	_, err := service.store.Get(ctx, accountID)
 	if errors.Is(err, ErrNotFound) {
@@ -211,7 +209,7 @@ func normalizeList(raw json.RawMessage) (json.RawMessage, error) {
 	return trimmed, nil
 }
 
-// DecodeCursor parses an opaque cursor emitted by a previous crews page.
+// parses an opaque cursor emitted by a previous crews page.
 func DecodeCursor(raw string) (*Cursor, error) {
 	name, accountID, err := pagination.Decode(raw)
 	if err != nil || name == "" {

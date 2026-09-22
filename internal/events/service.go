@@ -37,7 +37,7 @@ const (
 	StatusCancelled Status = "cancelled"
 )
 
-// CrewSummary is the assignment view of the crew an event relies on.
+// the crew assignment as the events domain sees it.
 type CrewSummary struct {
 	AccountID    string
 	Name         string
@@ -73,20 +73,19 @@ type Filter struct {
 	PageSize    int32
 }
 
-// Cursor is the keyset position of the last event in a page, ordered by
-// (starts_at, id).
+// keyset position of the last event in a page: (starts_at, id).
 type Cursor struct {
 	StartsAt time.Time
 	ID       string
 }
 
-// Page is one keyset page of events.
+// one keyset page of events.
 type Page struct {
 	Events     []Event
 	NextCursor string
 }
 
-// NewEvent is the fully resolved event written when a host creates one.
+// the fully resolved event written when a host creates one.
 type NewEvent struct {
 	HostID          string
 	AssignedCrewID  *string
@@ -98,7 +97,7 @@ type NewEvent struct {
 	EndsAt          time.Time
 }
 
-// EventUpdate is the fully resolved event written when a host updates one.
+// the fully resolved event written when a host updates one.
 type EventUpdate struct {
 	ID              string
 	Name            string
@@ -130,7 +129,7 @@ type UpdateInput struct {
 	Cancel          bool
 }
 
-// Store is the persistence port owned by the events domain.
+// persistence port owned by the events domain.
 type Store interface {
 	Create(ctx context.Context, event NewEvent) (Event, error)
 	Get(ctx context.Context, id string) (Event, error)
@@ -140,8 +139,7 @@ type Store interface {
 	List(ctx context.Context, filter Filter) ([]Event, error)
 }
 
-// CrewDirectory lets the events domain validate a crew assignment without
-// reaching into the crews persistence.
+// lets events validate a crew assignment without touching crews storage.
 type CrewDirectory interface {
 	Exists(ctx context.Context, accountID string) (bool, error)
 }
@@ -216,8 +214,8 @@ func (service *Service) List(ctx context.Context, filter Filter) (Page, error) {
 		filter.PageSize = maxListLimit
 	}
 
-	// Fetch one extra row to detect whether a further page exists. A short page
-	// ends the listing, so no cursor is emitted.
+	// fetch one extra row to know if there's another page. a short page means
+	// the listing ended, so no cursor is returned.
 	fetchSize := filter.PageSize + 1
 	events, err := service.store.List(ctx, Filter{
 		Name:        filter.Name,
@@ -362,7 +360,7 @@ func endsAt(startsAt time.Time, durationSeconds int32) time.Time {
 	return startsAt.Add(time.Duration(durationSeconds) * time.Second)
 }
 
-// DecodeCursor parses an opaque cursor emitted by a previous events page.
+// parses an opaque cursor emitted by a previous events page.
 func DecodeCursor(raw string) (*Cursor, error) {
 	sortKey, id, err := pagination.Decode(raw)
 	if err != nil {

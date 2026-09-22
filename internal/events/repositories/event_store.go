@@ -113,8 +113,8 @@ func (store *EventStore) Update(ctx context.Context, update events.EventUpdate) 
 		EndsAt:          timestamp(update.EndsAt),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		// The guarded update found no writable row: the event moved out of
-		// 'upcoming' or reservations grew past the requested total.
+		// no writable row: the event left 'upcoming', or reservations grew past
+		// the requested total.
 		return events.Event{}, events.ErrConflict
 	}
 	if err != nil {

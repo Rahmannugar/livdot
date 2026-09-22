@@ -11,13 +11,13 @@ import (
 
 const identityContextKey = "livdot.authentication.identity"
 
-// SessionResolver resolves a raw opaque session token to an authenticated account.
+// resolves a raw session token to an authenticated account.
 type SessionResolver interface {
 	Authenticate(ctx context.Context, rawToken string) (Identity, error)
 }
 
-// RequireSession rejects requests without a valid `Authorization: Bearer` token
-// and stores the resolved Identity on the request context.
+// rejects requests without a valid bearer token and stashes the resolved
+// identity on the request context.
 func RequireSession(resolver SessionResolver) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		rawToken, ok := bearerToken(ctx)
@@ -42,7 +42,7 @@ func RequireSession(resolver SessionResolver) gin.HandlerFunc {
 	}
 }
 
-// RequireRole permits only the listed roles. It must run after RequireSession.
+// only allows the listed roles. must run after RequireSession.
 func RequireRole(roles ...Role) gin.HandlerFunc {
 	allowed := make(map[Role]struct{}, len(roles))
 	for _, role := range roles {
@@ -64,7 +64,7 @@ func RequireRole(roles ...Role) gin.HandlerFunc {
 	}
 }
 
-// IdentityFrom returns the authenticated identity attached by RequireSession.
+// the identity attached by RequireSession.
 func IdentityFrom(ctx *gin.Context) (Identity, bool) {
 	value, exists := ctx.Get(identityContextKey)
 	if !exists {

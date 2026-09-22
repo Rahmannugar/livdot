@@ -35,7 +35,7 @@ var (
 	ErrUnauthenticated      = errors.New("session token is not valid for an active session")
 )
 
-// Identity is the authenticated account resolved from an opaque session token.
+// the authenticated account behind a session token.
 type Identity struct {
 	AccountID string
 	Role      Role
@@ -191,9 +191,8 @@ func (service *Service) Resolve(ctx context.Context, rawToken string) (sessionto
 	return service.sessions.Resolve(ctx, rawToken)
 }
 
-// Authenticate resolves an opaque session token to the active account and its
-// role. Only credential-level failures are reported as ErrUnauthenticated so
-// callers can distinguish a rejected token from an infrastructure failure.
+// resolves a session token to the account + role. bad tokens come back as
+// ErrUnauthenticated so callers can tell a rejected token from an outage.
 func (service *Service) Authenticate(ctx context.Context, rawToken string) (Identity, error) {
 	if strings.TrimSpace(rawToken) == "" {
 		return Identity{}, ErrUnauthenticated

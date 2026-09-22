@@ -11,12 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ErrAccountNotFound reports that no account exists for the requested subject.
+// no account for the requested subject.
 var ErrAccountNotFound = errors.New("authentication account not found")
 
-// AccountDirectory resolves the account type that a session subject belongs to.
-// Session records deliberately carry only the subject ID, so authorization
-// needs this role-agnostic lookup.
+// resolves a session subject's account type. sessions only carry the subject
+// id, so authorization needs this lookup.
 type AccountDirectory struct {
 	pool *pgxpool.Pool
 }

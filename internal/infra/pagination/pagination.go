@@ -14,7 +14,7 @@ type cursorValue struct {
 	ID   string `json:"i"`
 }
 
-// Encode serializes the sort key and tie-breaker of the last returned row.
+// serializes the sort key + tie-breaker of the last returned row.
 func Encode(sortKey, id string) string {
 	encoded, err := json.Marshal(cursorValue{Sort: sortKey, ID: id})
 	if err != nil {
@@ -23,7 +23,7 @@ func Encode(sortKey, id string) string {
 	return base64.RawURLEncoding.EncodeToString(encoded)
 }
 
-// Decode returns the sort key and tie-breaker stored in an opaque cursor.
+// pulls the sort key + tie-breaker back out of an opaque cursor.
 func Decode(raw string) (string, string, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
