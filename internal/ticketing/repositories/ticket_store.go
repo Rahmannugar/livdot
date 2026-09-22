@@ -328,6 +328,36 @@ func (store *TicketStore) ExpireReservations(ctx context.Context, limit int32) (
 	return len(tickets), nil
 }
 
+func (store *TicketStore) PendingTicketNotices(ctx context.Context, limit int32) ([]ticketing.TicketNotice, error) {
+	records, err := ticketingdb.New(store.pool).ListUnnotifiedIssuedTickets(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list issued tickets: %w", err)
+	}
+	notices := make([]ticketing.TicketNotice, 0, len(records))
+	for _, record := range records {
+		notices = append(notices, ticketing.TicketNotice{
+			TicketID: record.ID.String(),
+			UserID:   record.UserID.String(),
+			EventID:  record.EventID.String(),
+		})
+	}
+	return notices, nil
+}
+
+func (store *TicketStore) MarkTicketNotified(ctx context.Context, ticketID string) error {
+	id, err := uuid.Parse(ticketID)
+	if err != nil {
+		return ticketing.ErrInvalidInput
+	}
+	if _, err := ticketingdb.New(store.pool).MarkTicketNotified(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("mark ticket notified: %w", err)
+	}
+	return nil
+}
+
 func purchase(record ticketingdb.EventPurchase, err error) (ticketing.Purchase, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ticketing.Purchase{}, ticketing.ErrNotFound

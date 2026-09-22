@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
-	"github.com/Rahmannugar/livdot/internal/notifications"
 	"github.com/google/uuid"
 )
 
@@ -119,9 +118,11 @@ type Refunder interface {
 	RefundExpiredPurchase(ctx context.Context, purchase RefundablePurchase) error
 }
 
-// records domain events for asynchronous delivery.
-type Emitter interface {
-	Enqueue(ctx context.Context, aggregateType, aggregateID, eventType, idempotencyKey string, payload any) error
+// an issued ticket that still needs its receipt email.
+type TicketNotice struct {
+	TicketID string
+	UserID   string
+	EventID  string
 }
 
 // persistence port owned by the ticketing domain.
@@ -137,17 +138,18 @@ type Store interface {
 	FailAndRelease(ctx context.Context, purchaseID string) (Purchase, error)
 	TicketByID(ctx context.Context, id string) (Ticket, error)
 	ExpireReservations(ctx context.Context, limit int32) (int, error)
+	PendingTicketNotices(ctx context.Context, limit int32) ([]TicketNotice, error)
+	MarkTicketNotified(ctx context.Context, ticketID string) error
 }
 
 type Service struct {
 	store    Store
 	provider payment.Provider
 	refunder Refunder
-	events   Emitter
 	now      func() time.Time
 }
 
-func NewService(store Store, provider payment.Provider, refunder Refunder, events Emitter) (*Service, error) {
+func NewService(store Store, provider payment.Provider, refunder Refunder) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("ticketing store is required")
 	}
@@ -157,10 +159,7 @@ func NewService(store Store, provider payment.Provider, refunder Refunder, event
 	if refunder == nil {
 		return nil, fmt.Errorf("refunder is required")
 	}
-	if events == nil {
-		return nil, fmt.Errorf("event emitter is required")
-	}
-	return &Service{store: store, provider: provider, refunder: refunder, events: events, now: time.Now}, nil
+	return &Service{store: store, provider: provider, refunder: refunder, now: time.Now}, nil
 }
 
 // Purchase holds a slot, records a payment intent, and returns the checkout URL.
@@ -269,6 +268,18 @@ func (service *Service) ExpireReservations(ctx context.Context, limit int32) (in
 	return service.store.ExpireReservations(ctx, limit)
 }
 
+// PendingTicketNotices lists issued tickets whose receipt was not sent yet.
+func (service *Service) PendingTicketNotices(ctx context.Context, limit int32) ([]TicketNotice, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	return service.store.PendingTicketNotices(ctx, limit)
+}
+
+func (service *Service) MarkTicketNotified(ctx context.Context, ticketID string) error {
+	return service.store.MarkTicketNotified(ctx, ticketID)
+}
+
 // Handles claims the charge webhook types for the shared webhook dispatcher.
 func (service *Service) Handles(eventType string) bool {
 	switch eventType {
@@ -308,17 +319,7 @@ func (service *Service) settlePaid(ctx context.Context, event payment.WebhookEve
 		return err
 	}
 	if !result.Expired {
-		// queue the ticket email. the outbox key makes a redelivery a no-op.
-		return service.events.Enqueue(ctx, "purchase", result.Purchase.ID, "ticket.issued",
-			"ticket.issued:"+result.Purchase.ID, map[string]any{
-				"recipientAccountId": result.Purchase.UserID,
-				"notificationType":   "ticket_issued",
-				"templateKey":        notifications.TemplateTicketReceipt,
-				"data": map[string]any{
-					"eventId":  result.Purchase.EventID,
-					"ticketId": ticketID(result.Ticket),
-				},
-			})
+		return nil
 	}
 	// the charge landed after the hold lapsed, so refund instead of granting access.
 	return service.refunder.RefundExpiredPurchase(ctx, RefundablePurchase{
@@ -336,11 +337,4 @@ func providerPaymentID(value *string) string {
 		return ""
 	}
 	return *value
-}
-
-func ticketID(ticket *Ticket) string {
-	if ticket == nil {
-		return ""
-	}
-	return ticket.ID
 }

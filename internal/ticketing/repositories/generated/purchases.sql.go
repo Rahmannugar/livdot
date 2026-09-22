@@ -31,15 +31,27 @@ RETURNING ticket.id, ticket.event_id, ticket.user_id, ticket.purchase_id,
           ticket.issued_at, ticket.revoked_at
 `
 
-func (q *Queries) ClaimExpiredTicketReservations(ctx context.Context, limit int32) ([]Ticket, error) {
+type ClaimExpiredTicketReservationsRow struct {
+	ID                   uuid.UUID
+	EventID              uuid.UUID
+	UserID               uuid.UUID
+	PurchaseID           uuid.UUID
+	Status               TicketStatus
+	ReservedAt           pgtype.Timestamptz
+	ReservationExpiresAt pgtype.Timestamptz
+	IssuedAt             pgtype.Timestamptz
+	RevokedAt            pgtype.Timestamptz
+}
+
+func (q *Queries) ClaimExpiredTicketReservations(ctx context.Context, limit int32) ([]ClaimExpiredTicketReservationsRow, error) {
 	rows, err := q.db.Query(ctx, claimExpiredTicketReservations, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Ticket
+	var items []ClaimExpiredTicketReservationsRow
 	for rows.Next() {
-		var i Ticket
+		var i ClaimExpiredTicketReservationsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.EventID,
@@ -217,7 +229,7 @@ INSERT INTO tickets (
 )
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
-          reservation_expires_at, issued_at, revoked_at
+          reservation_expires_at, issued_at, revoked_at, notified_at
 `
 
 type CreateTemporaryTicketParams struct {
@@ -249,6 +261,7 @@ func (q *Queries) CreateTemporaryTicket(ctx context.Context, arg CreateTemporary
 		&i.ReservationExpiresAt,
 		&i.IssuedAt,
 		&i.RevokedAt,
+		&i.NotifiedAt,
 	)
 	return i, err
 }
@@ -260,7 +273,7 @@ SET status = 'reservation_expired',
 WHERE purchase_id = $1
   AND status = 'temporarily_reserved'
 RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
-          reservation_expires_at, issued_at, revoked_at
+          reservation_expires_at, issued_at, revoked_at, notified_at
 `
 
 func (q *Queries) ExpireTicketByPurchase(ctx context.Context, purchaseID uuid.UUID) (Ticket, error) {
@@ -276,6 +289,7 @@ func (q *Queries) ExpireTicketByPurchase(ctx context.Context, purchaseID uuid.UU
 		&i.ReservationExpiresAt,
 		&i.IssuedAt,
 		&i.RevokedAt,
+		&i.NotifiedAt,
 	)
 	return i, err
 }
@@ -288,7 +302,7 @@ WHERE id = $1
   AND status = 'temporarily_reserved'
   AND reservation_expires_at <= now()
 RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
-          reservation_expires_at, issued_at, revoked_at
+          reservation_expires_at, issued_at, revoked_at, notified_at
 `
 
 func (q *Queries) ExpireTicketReservation(ctx context.Context, id uuid.UUID) (Ticket, error) {
@@ -304,6 +318,7 @@ func (q *Queries) ExpireTicketReservation(ctx context.Context, id uuid.UUID) (Ti
 		&i.ReservationExpiresAt,
 		&i.IssuedAt,
 		&i.RevokedAt,
+		&i.NotifiedAt,
 	)
 	return i, err
 }
@@ -478,7 +493,7 @@ func (q *Queries) GetPurchaseByIdempotencyKey(ctx context.Context, arg GetPurcha
 
 const getTicketByID = `-- name: GetTicketByID :one
 SELECT id, event_id, user_id, purchase_id, status, reserved_at,
-       reservation_expires_at, issued_at, revoked_at
+       reservation_expires_at, issued_at, revoked_at, notified_at
 FROM tickets
 WHERE id = $1
 `
@@ -496,13 +511,14 @@ func (q *Queries) GetTicketByID(ctx context.Context, id uuid.UUID) (Ticket, erro
 		&i.ReservationExpiresAt,
 		&i.IssuedAt,
 		&i.RevokedAt,
+		&i.NotifiedAt,
 	)
 	return i, err
 }
 
 const getTicketByPurchase = `-- name: GetTicketByPurchase :one
 SELECT id, event_id, user_id, purchase_id, status, reserved_at,
-       reservation_expires_at, issued_at, revoked_at
+       reservation_expires_at, issued_at, revoked_at, notified_at
 FROM tickets
 WHERE purchase_id = $1
 `
@@ -520,6 +536,7 @@ func (q *Queries) GetTicketByPurchase(ctx context.Context, purchaseID uuid.UUID)
 		&i.ReservationExpiresAt,
 		&i.IssuedAt,
 		&i.RevokedAt,
+		&i.NotifiedAt,
 	)
 	return i, err
 }
@@ -532,7 +549,7 @@ WHERE id = $1
   AND status = 'temporarily_reserved'
   AND reservation_expires_at > now()
 RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
-          reservation_expires_at, issued_at, revoked_at
+          reservation_expires_at, issued_at, revoked_at, notified_at
 `
 
 func (q *Queries) IssueTicket(ctx context.Context, id uuid.UUID) (Ticket, error) {
@@ -548,6 +565,7 @@ func (q *Queries) IssueTicket(ctx context.Context, id uuid.UUID) (Ticket, error)
 		&i.ReservationExpiresAt,
 		&i.IssuedAt,
 		&i.RevokedAt,
+		&i.NotifiedAt,
 	)
 	return i, err
 }
@@ -560,7 +578,7 @@ WHERE purchase_id = $1
   AND status = 'temporarily_reserved'
   AND reservation_expires_at > now()
 RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
-          reservation_expires_at, issued_at, revoked_at
+          reservation_expires_at, issued_at, revoked_at, notified_at
 `
 
 func (q *Queries) IssueTicketByPurchase(ctx context.Context, purchaseID uuid.UUID) (Ticket, error) {
@@ -576,8 +594,54 @@ func (q *Queries) IssueTicketByPurchase(ctx context.Context, purchaseID uuid.UUI
 		&i.ReservationExpiresAt,
 		&i.IssuedAt,
 		&i.RevokedAt,
+		&i.NotifiedAt,
 	)
 	return i, err
+}
+
+const listUnnotifiedIssuedTickets = `-- name: ListUnnotifiedIssuedTickets :many
+SELECT id, event_id, user_id, purchase_id, status, issued_at
+FROM tickets
+WHERE status = 'issued'
+  AND notified_at IS NULL
+ORDER BY issued_at
+LIMIT $1
+`
+
+type ListUnnotifiedIssuedTicketsRow struct {
+	ID         uuid.UUID
+	EventID    uuid.UUID
+	UserID     uuid.UUID
+	PurchaseID uuid.UUID
+	Status     TicketStatus
+	IssuedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) ListUnnotifiedIssuedTickets(ctx context.Context, limit int32) ([]ListUnnotifiedIssuedTicketsRow, error) {
+	rows, err := q.db.Query(ctx, listUnnotifiedIssuedTickets, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnnotifiedIssuedTicketsRow
+	for rows.Next() {
+		var i ListUnnotifiedIssuedTicketsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.UserID,
+			&i.PurchaseID,
+			&i.Status,
+			&i.IssuedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markPurchaseFailed = `-- name: MarkPurchaseFailed :one
@@ -694,6 +758,26 @@ func (q *Queries) MarkPurchaseProcessing(ctx context.Context, id uuid.UUID) (Eve
 		&i.PaidAt,
 		&i.RefundedAt,
 	)
+	return i, err
+}
+
+const markTicketNotified = `-- name: MarkTicketNotified :one
+UPDATE tickets
+SET notified_at = now()
+WHERE id = $1
+  AND notified_at IS NULL
+RETURNING id, notified_at
+`
+
+type MarkTicketNotifiedRow struct {
+	ID         uuid.UUID
+	NotifiedAt pgtype.Timestamptz
+}
+
+func (q *Queries) MarkTicketNotified(ctx context.Context, id uuid.UUID) (MarkTicketNotifiedRow, error) {
+	row := q.db.QueryRow(ctx, markTicketNotified, id)
+	var i MarkTicketNotifiedRow
+	err := row.Scan(&i.ID, &i.NotifiedAt)
 	return i, err
 }
 

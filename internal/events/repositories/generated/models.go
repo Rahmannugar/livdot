@@ -113,4 +113,5 @@ type Event struct {
 	CancelledAt      pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+	CrewNotifiedAt   pgtype.Timestamptz
 }

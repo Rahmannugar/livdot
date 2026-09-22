@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
-	"github.com/Rahmannugar/livdot/internal/notifications"
 	"github.com/Rahmannugar/livdot/internal/ticketing"
 	"github.com/google/uuid"
 )
@@ -93,6 +92,14 @@ type PurchaseForRefund struct {
 	ProviderPaymentID *string
 }
 
+// a completed refund that still needs its receipt email.
+type RefundNotice struct {
+	RefundID    string
+	UserID      string
+	EventID     string
+	AmountMinor int64
+}
+
 // the event facts finance needs for a payout.
 type Event struct {
 	ID     string
@@ -137,8 +144,7 @@ type PayoutPage struct {
 // persistence port owned by the finance domain.
 type Store interface {
 	CreateRefund(ctx context.Context, input RefundInput) (Refund, bool, error)
-	MarkRefunded(ctx context.Context, refundID, providerRefundID string) (Refund, error)
-	MarkPurchaseRefunded(ctx context.Context, purchaseID string) error
+	SettleRefund(ctx context.Context, refundID, providerRefundID string) (Refund, error)
 	PaidPurchasesForEvent(ctx context.Context, eventID string) ([]PurchaseForRefund, error)
 	SumPaidPurchases(ctx context.Context, eventID string) (int64, error)
 	SumRefundedPurchases(ctx context.Context, eventID string) (int64, error)
@@ -146,6 +152,8 @@ type Store interface {
 	EventForFinance(ctx context.Context, eventID string) (Event, error)
 	RefundByID(ctx context.Context, id string) (Refund, error)
 	Refunds(ctx context.Context, filter RefundFilter) ([]Refund, error)
+	PendingRefundNotices(ctx context.Context, limit int32) ([]RefundNotice, error)
+	MarkRefundNotified(ctx context.Context, refundID string) error
 	CreatePayout(ctx context.Context, input PayoutInput) (Payout, bool, error)
 	MarkPayoutPaid(ctx context.Context, payoutID, providerPayoutID string) (Payout, error)
 	PayoutByID(ctx context.Context, id string) (Payout, error)
@@ -156,26 +164,17 @@ type Store interface {
 type Service struct {
 	store    Store
 	provider payment.Provider
-	events   Emitter
 	now      func() time.Time
 }
 
-// records domain events for asynchronous delivery.
-type Emitter interface {
-	Enqueue(ctx context.Context, aggregateType, aggregateID, eventType, idempotencyKey string, payload any) error
-}
-
-func NewService(store Store, provider payment.Provider, events Emitter) (*Service, error) {
+func NewService(store Store, provider payment.Provider) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("finance store is required")
 	}
 	if provider == nil {
 		return nil, fmt.Errorf("payment provider is required")
 	}
-	if events == nil {
-		return nil, fmt.Errorf("event emitter is required")
-	}
-	return &Service{store: store, provider: provider, events: events, now: time.Now}, nil
+	return &Service{store: store, provider: provider, now: time.Now}, nil
 }
 
 // RefundExpiredPurchase refunds a charge whose reservation lapsed before the
@@ -348,32 +347,21 @@ func (service *Service) settleRefund(ctx context.Context, refund Refund, provide
 	if err != nil {
 		return fmt.Errorf("initiate refund: %w", err)
 	}
-	marked, err := service.store.MarkRefunded(ctx, refund.ID, result.ProviderReference)
-	if err != nil {
-		return err
+	// settle the refund, the purchase, and the ledger row in one transaction.
+	_, err = service.store.SettleRefund(ctx, refund.ID, result.ProviderReference)
+	return err
+}
+
+// PendingRefundNotices lists completed refunds whose receipt was not sent yet.
+func (service *Service) PendingRefundNotices(ctx context.Context, limit int32) ([]RefundNotice, error) {
+	if limit <= 0 {
+		limit = 100
 	}
-	if err := service.store.MarkPurchaseRefunded(ctx, refund.PurchaseID); err != nil {
-		return err
-	}
-	if err := service.store.RecordLedger(ctx, LedgerInput{
-		EventID:     refund.EventID,
-		EntryType:   "refund",
-		AmountMinor: marked.AmountMinor,
-		RefundID:    &marked.ID,
-	}); err != nil {
-		return err
-	}
-	// queue the refund email. the outbox key makes a redelivery a no-op.
-	return service.events.Enqueue(ctx, "refund", marked.ID, "refund.completed",
-		"refund.completed:"+marked.ID, map[string]any{
-			"recipientAccountId": marked.UserID,
-			"notificationType":   "refund_completed",
-			"templateKey":        notifications.TemplateRefundReceipt,
-			"data": map[string]any{
-				"eventId":     marked.EventID,
-				"amountMinor": marked.AmountMinor,
-			},
-		})
+	return service.store.PendingRefundNotices(ctx, limit)
+}
+
+func (service *Service) MarkRefundNotified(ctx context.Context, refundID string) error {
+	return service.store.MarkRefundNotified(ctx, refundID)
 }
 
 func normalizeFilter(pageSize *int32, cursor **string) {

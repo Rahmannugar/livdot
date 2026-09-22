@@ -22,7 +22,6 @@ import (
 	"github.com/Rahmannugar/livdot/internal/health"
 	"github.com/Rahmannugar/livdot/internal/infra/cache"
 	"github.com/Rahmannugar/livdot/internal/infra/database"
-	"github.com/Rahmannugar/livdot/internal/infra/outbox"
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	streamprovider "github.com/Rahmannugar/livdot/internal/infra/streaming"
@@ -115,19 +114,17 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure crews: %w", err)
 	}
-	outboxWriter := outbox.NewWriter(databasePool)
 	eventService, err := events.NewService(
-		eventsrepo.NewEventStore(databasePool), crewService, outboxWriter)
+		eventsrepo.NewEventStore(databasePool), crewService)
 	if err != nil {
 		return fmt.Errorf("configure events: %w", err)
 	}
-
 	paymentProvider, err := payment.NewMock(cfg.Payment.Secret, cfg.Payment.BaseURL)
 	if err != nil {
 		return fmt.Errorf("configure payment provider: %w", err)
 	}
 	financeService, err := finance.NewService(
-		financerepo.NewFinanceStore(databasePool), paymentProvider, outboxWriter)
+		financerepo.NewFinanceStore(databasePool), paymentProvider)
 	if err != nil {
 		return fmt.Errorf("configure finance: %w", err)
 	}
@@ -135,7 +132,6 @@ func run(logger *slog.Logger) error {
 		ticketingrepo.NewTicketStore(databasePool),
 		paymentProvider,
 		financeService,
-		outboxWriter,
 	)
 	if err != nil {
 		return fmt.Errorf("configure ticketing: %w", err)

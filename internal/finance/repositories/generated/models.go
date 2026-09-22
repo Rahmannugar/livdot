@@ -330,6 +330,7 @@ type EventRefund struct {
 	ProcessedAt      pgtype.Timestamptz
 	RetriedAt        pgtype.Timestamptz
 	RefundedAt       pgtype.Timestamptz
+	NotifiedAt       pgtype.Timestamptz
 }
 
 type LedgerEntry struct {

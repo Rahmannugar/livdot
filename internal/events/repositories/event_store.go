@@ -172,6 +172,39 @@ func (store *EventStore) List(ctx context.Context, filter events.Filter) ([]even
 	return results, nil
 }
 
+func (store *EventStore) PendingCrewNotices(ctx context.Context, limit int32) ([]events.CrewNotice, error) {
+	records, err := eventsdb.New(store.pool).ListEventsAwaitingCrewNotice(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list events awaiting crew notice: %w", err)
+	}
+	notices := make([]events.CrewNotice, 0, len(records))
+	for _, record := range records {
+		if !record.AssignedCrewID.Valid {
+			continue
+		}
+		notices = append(notices, events.CrewNotice{
+			EventID:   record.ID.String(),
+			CrewID:    uuid.UUID(record.AssignedCrewID.Bytes).String(),
+			EventName: record.Name,
+		})
+	}
+	return notices, nil
+}
+
+func (store *EventStore) MarkCrewNotified(ctx context.Context, eventID string) error {
+	id, err := uuid.Parse(eventID)
+	if err != nil {
+		return events.ErrInvalidInput
+	}
+	if _, err := eventsdb.New(store.pool).MarkEventCrewNotified(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("mark event crew notified: %w", err)
+	}
+	return nil
+}
+
 func eventRecord(record eventsdb.Event) events.Event {
 	return events.Event{
 		ID:               record.ID.String(),

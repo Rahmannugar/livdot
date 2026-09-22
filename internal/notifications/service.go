@@ -50,20 +50,56 @@ type Store interface {
 	MarkFailed(ctx context.Context, id, reason string, nextAttempt time.Time) error
 }
 
-type Service struct {
-	store  Store
-	sender email.Sender
-	now    func() time.Time
+// resolves the recipient email for an account.
+type Directory interface {
+	AccountEmail(ctx context.Context, accountID string) (string, error)
 }
 
-func NewService(store Store, sender email.Sender) (*Service, error) {
+type Service struct {
+	store     Store
+	sender    email.Sender
+	directory Directory
+	now       func() time.Time
+}
+
+func NewService(store Store, sender email.Sender, directory Directory) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("notification store is required")
 	}
 	if sender == nil {
 		return nil, fmt.Errorf("email sender is required")
 	}
-	return &Service{store: store, sender: sender, now: time.Now}, nil
+	if directory == nil {
+		return nil, fmt.Errorf("recipient directory is required")
+	}
+	return &Service{store: store, sender: sender, directory: directory, now: time.Now}, nil
+}
+
+// EnqueueForAccount resolves the recipient email and queues a rendered email
+// once. It is how domains ask for a notification without knowing about emails.
+func (service *Service) EnqueueForAccount(
+	ctx context.Context,
+	accountID, notificationType, templateKey string,
+	data map[string]any,
+	idempotencyKey string,
+) error {
+	recipient, err := service.directory.AccountEmail(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("encode notification data: %w", err)
+	}
+	_, _, err = service.store.Enqueue(ctx, EnqueueInput{
+		Type:               notificationType,
+		RecipientAccountID: &accountID,
+		RecipientEmail:     recipient,
+		TemplateKey:        templateKey,
+		Payload:            payload,
+		IdempotencyKey:     idempotencyKey,
+	})
+	return err
 }
 
 // Enqueue records an email once. Repeated calls with the same idempotency key

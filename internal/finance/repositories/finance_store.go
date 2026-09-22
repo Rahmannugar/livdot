@@ -60,12 +60,21 @@ func (store *FinanceStore) CreateRefund(ctx context.Context, input finance.Refun
 	return refundFromRecord(record), true, nil
 }
 
-func (store *FinanceStore) MarkRefunded(ctx context.Context, refundID, providerRefundID string) (finance.Refund, error) {
+// SettleRefund marks the refund and its purchase refunded and records the ledger
+// movement in one transaction.
+func (store *FinanceStore) SettleRefund(ctx context.Context, refundID, providerRefundID string) (finance.Refund, error) {
 	id, err := uuid.Parse(refundID)
 	if err != nil {
 		return finance.Refund{}, finance.ErrNotFound
 	}
-	record, err := financedb.New(store.pool).MarkRefunded(ctx, financedb.MarkRefundedParams{
+	tx, err := store.pool.Begin(ctx)
+	if err != nil {
+		return finance.Refund{}, fmt.Errorf("begin refund settlement: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	queries := financedb.New(tx)
+	record, err := queries.MarkRefunded(ctx, financedb.MarkRefundedParams{
 		ID:               id,
 		ProviderRefundID: &providerRefundID,
 	})
@@ -75,19 +84,55 @@ func (store *FinanceStore) MarkRefunded(ctx context.Context, refundID, providerR
 	if err != nil {
 		return finance.Refund{}, fmt.Errorf("mark refunded: %w", err)
 	}
+	if _, err := queries.MarkPurchaseRefunded(ctx, record.PurchaseID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return finance.Refund{}, fmt.Errorf("mark purchase refunded: %w", err)
+	}
+	entryID, err := uuid.NewV7()
+	if err != nil {
+		return finance.Refund{}, fmt.Errorf("generate ledger id: %w", err)
+	}
+	if _, err := queries.CreateLedgerEntry(ctx, financedb.CreateLedgerEntryParams{
+		ID:          entryID,
+		EventID:     record.EventID,
+		EntryType:   financedb.LedgerEntryTypeRefund,
+		AmountMinor: record.AmountMinor,
+		RefundID:    pgtype.UUID{Bytes: record.ID, Valid: true},
+	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return finance.Refund{}, fmt.Errorf("create ledger entry: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return finance.Refund{}, fmt.Errorf("commit refund settlement: %w", err)
+	}
 	return refundFromRecord(record), nil
 }
 
-func (store *FinanceStore) MarkPurchaseRefunded(ctx context.Context, purchaseID string) error {
-	id, err := uuid.Parse(purchaseID)
+func (store *FinanceStore) PendingRefundNotices(ctx context.Context, limit int32) ([]finance.RefundNotice, error) {
+	records, err := financedb.New(store.pool).ListUnnotifiedRefunds(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list unnotified refunds: %w", err)
+	}
+	notices := make([]finance.RefundNotice, 0, len(records))
+	for _, record := range records {
+		notices = append(notices, finance.RefundNotice{
+			RefundID:    record.ID.String(),
+			UserID:      record.UserID.String(),
+			EventID:     record.EventID.String(),
+			AmountMinor: record.AmountMinor,
+		})
+	}
+	return notices, nil
+}
+
+func (store *FinanceStore) MarkRefundNotified(ctx context.Context, refundID string) error {
+	id, err := uuid.Parse(refundID)
 	if err != nil {
 		return finance.ErrInvalidInput
 	}
-	if _, err := financedb.New(store.pool).MarkPurchaseRefunded(ctx, id); err != nil {
+	if _, err := financedb.New(store.pool).MarkRefundNotified(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
-		return fmt.Errorf("mark purchase refunded: %w", err)
+		return fmt.Errorf("mark refund notified: %w", err)
 	}
 	return nil
 }

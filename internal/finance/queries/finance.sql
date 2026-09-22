@@ -6,7 +6,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (purchase_id) DO NOTHING
 RETURNING id, event_id, user_id, purchase_id, amount_minor, status, provider,
           provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
-          next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at;
+          next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at, notified_at;
 
 -- name: CreateEventPayout :one
 INSERT INTO event_payouts (
@@ -29,7 +29,7 @@ WHERE id = $1
   AND status = 'processing'
 RETURNING id, event_id, user_id, purchase_id, amount_minor, status, provider,
           provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
-          next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at;
+          next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at, notified_at;
 
 -- name: MarkPayoutPaid :one
 UPDATE event_payouts
@@ -125,14 +125,14 @@ WHERE event_id = $1 AND status = 'refunded';
 -- name: GetRefundByID :one
 SELECT id, event_id, user_id, purchase_id, amount_minor, status, provider,
        provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
-       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at
+       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at, notified_at
 FROM event_refunds
 WHERE id = $1;
 
 -- name: ListRefunds :many
 SELECT id, event_id, user_id, purchase_id, amount_minor, status, provider,
        provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
-       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at
+       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at, notified_at
 FROM event_refunds
 WHERE (sqlc.narg('event_id')::uuid IS NULL OR event_id = sqlc.narg('event_id')::uuid)
   AND (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uuid)
@@ -168,3 +168,18 @@ RETURNING id, event_id, entry_type, amount_minor, purchase_id, refund_id, payout
 SELECT status
 FROM event_streams
 WHERE event_id = $1;
+
+-- name: ListUnnotifiedRefunds :many
+SELECT id, event_id, user_id, amount_minor
+FROM event_refunds
+WHERE status = 'refunded'
+  AND notified_at IS NULL
+ORDER BY refunded_at
+LIMIT $1;
+
+-- name: MarkRefundNotified :one
+UPDATE event_refunds
+SET notified_at = now()
+WHERE id = $1
+  AND notified_at IS NULL
+RETURNING id, notified_at;

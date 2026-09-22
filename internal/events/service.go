@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/Rahmannugar/livdot/internal/infra/pagination"
-	"github.com/Rahmannugar/livdot/internal/notifications"
 	"github.com/google/uuid"
 )
 
@@ -138,11 +137,15 @@ type Store interface {
 	Update(ctx context.Context, update EventUpdate) (Event, error)
 	Cancel(ctx context.Context, id string) (Event, error)
 	List(ctx context.Context, filter Filter) ([]Event, error)
+	PendingCrewNotices(ctx context.Context, limit int32) ([]CrewNotice, error)
+	MarkCrewNotified(ctx context.Context, eventID string) error
 }
 
-// records domain events for asynchronous delivery.
-type Emitter interface {
-	Enqueue(ctx context.Context, aggregateType, aggregateID, eventType, idempotencyKey string, payload any) error
+// an assignment that still needs its crew email.
+type CrewNotice struct {
+	EventID   string
+	CrewID    string
+	EventName string
 }
 
 // lets events validate a crew assignment without touching crews storage.
@@ -151,23 +154,19 @@ type CrewDirectory interface {
 }
 
 type Service struct {
-	store  Store
-	crews  CrewDirectory
-	events Emitter
-	now    func() time.Time
+	store Store
+	crews CrewDirectory
+	now   func() time.Time
 }
 
-func NewService(store Store, crews CrewDirectory, events Emitter) (*Service, error) {
+func NewService(store Store, crews CrewDirectory) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("events store is required")
 	}
 	if crews == nil {
 		return nil, fmt.Errorf("crew directory is required")
 	}
-	if events == nil {
-		return nil, fmt.Errorf("event emitter is required")
-	}
-	return &Service{store: store, crews: crews, events: events, now: time.Now}, nil
+	return &Service{store: store, crews: crews, now: time.Now}, nil
 }
 
 func (service *Service) Create(ctx context.Context, hostID string, input CreateInput) (Event, error) {
@@ -180,7 +179,7 @@ func (service *Service) Create(ctx context.Context, hostID string, input CreateI
 			return Event{}, err
 		}
 	}
-	event, err := service.store.Create(ctx, NewEvent{
+	return service.store.Create(ctx, NewEvent{
 		HostID:          hostID,
 		AssignedCrewID:  input.AssignedCrewID,
 		Name:            name,
@@ -190,25 +189,18 @@ func (service *Service) Create(ctx context.Context, hostID string, input CreateI
 		StartsAt:        input.StartsAt,
 		EndsAt:          endsAt(input.StartsAt, input.DurationSeconds),
 	})
-	if err != nil {
-		return Event{}, err
+}
+
+// PendingCrewNotices lists assignments whose crew has not been emailed yet.
+func (service *Service) PendingCrewNotices(ctx context.Context, limit int32) ([]CrewNotice, error) {
+	if limit <= 0 {
+		limit = 100
 	}
-	if event.AssignedCrewID != nil {
-		// queue the assignment email. the outbox key makes a redelivery a no-op.
-		if err := service.events.Enqueue(ctx, "event", event.ID, "event.assigned",
-			"event.assigned:"+event.ID, map[string]any{
-				"recipientAccountId": *event.AssignedCrewID,
-				"notificationType":   "crew_assigned",
-				"templateKey":        notifications.TemplateCrewAssigned,
-				"data": map[string]any{
-					"eventId":   event.ID,
-					"eventName": event.Name,
-				},
-			}); err != nil {
-			return Event{}, err
-		}
-	}
-	return event, nil
+	return service.store.PendingCrewNotices(ctx, limit)
+}
+
+func (service *Service) MarkCrewNotified(ctx context.Context, eventID string) error {
+	return service.store.MarkCrewNotified(ctx, eventID)
 }
 
 func (service *Service) List(ctx context.Context, filter Filter) (Page, error) {

@@ -85,7 +85,7 @@ INSERT INTO tickets (
 )
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
-          reservation_expires_at, issued_at, revoked_at;
+          reservation_expires_at, issued_at, revoked_at, notified_at;
 
 -- name: ExpireTicketReservation :one
 UPDATE tickets
@@ -95,7 +95,7 @@ WHERE id = $1
   AND status = 'temporarily_reserved'
   AND reservation_expires_at <= now()
 RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
-          reservation_expires_at, issued_at, revoked_at;
+          reservation_expires_at, issued_at, revoked_at, notified_at;
 
 -- name: IssueTicket :one
 UPDATE tickets
@@ -105,7 +105,7 @@ WHERE id = $1
   AND status = 'temporarily_reserved'
   AND reservation_expires_at > now()
 RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
-          reservation_expires_at, issued_at, revoked_at;
+          reservation_expires_at, issued_at, revoked_at, notified_at;
 
 -- name: CreateEventMember :one
 INSERT INTO event_members (id, event_id, user_id, ticket_id)
@@ -158,13 +158,13 @@ RETURNING id, event_id, user_id, amount_minor, status, provider, provider_paymen
 
 -- name: GetTicketByID :one
 SELECT id, event_id, user_id, purchase_id, status, reserved_at,
-       reservation_expires_at, issued_at, revoked_at
+       reservation_expires_at, issued_at, revoked_at, notified_at
 FROM tickets
 WHERE id = $1;
 
 -- name: GetTicketByPurchase :one
 SELECT id, event_id, user_id, purchase_id, status, reserved_at,
-       reservation_expires_at, issued_at, revoked_at
+       reservation_expires_at, issued_at, revoked_at, notified_at
 FROM tickets
 WHERE purchase_id = $1;
 
@@ -176,7 +176,7 @@ WHERE purchase_id = $1
   AND status = 'temporarily_reserved'
   AND reservation_expires_at > now()
 RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
-          reservation_expires_at, issued_at, revoked_at;
+          reservation_expires_at, issued_at, revoked_at, notified_at;
 
 -- name: ExpireTicketByPurchase :one
 UPDATE tickets
@@ -185,7 +185,7 @@ SET status = 'reservation_expired',
 WHERE purchase_id = $1
   AND status = 'temporarily_reserved'
 RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
-          reservation_expires_at, issued_at, revoked_at;
+          reservation_expires_at, issued_at, revoked_at, notified_at;
 
 -- name: ClaimExpiredTicketReservations :many
 WITH claim AS (
@@ -204,3 +204,18 @@ WHERE ticket.id = claim.id
 RETURNING ticket.id, ticket.event_id, ticket.user_id, ticket.purchase_id,
           ticket.status, ticket.reserved_at, ticket.reservation_expires_at,
           ticket.issued_at, ticket.revoked_at;
+
+-- name: ListUnnotifiedIssuedTickets :many
+SELECT id, event_id, user_id, purchase_id, status, issued_at
+FROM tickets
+WHERE status = 'issued'
+  AND notified_at IS NULL
+ORDER BY issued_at
+LIMIT $1;
+
+-- name: MarkTicketNotified :one
+UPDATE tickets
+SET notified_at = now()
+WHERE id = $1
+  AND notified_at IS NULL
+RETURNING id, notified_at;
