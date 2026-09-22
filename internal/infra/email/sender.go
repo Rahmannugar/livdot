@@ -7,6 +7,8 @@ import "context"
 type Message struct {
 	To          string
 	TemplateKey string
+	Subject     string
+	Body        string
 	Payload     map[string]any
 }
 

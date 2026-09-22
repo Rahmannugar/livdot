@@ -24,6 +24,7 @@ import (
 	"github.com/Rahmannugar/livdot/internal/infra/database"
 	"github.com/Rahmannugar/livdot/internal/infra/outbox"
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
+	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	streamprovider "github.com/Rahmannugar/livdot/internal/infra/streaming"
 	"github.com/Rahmannugar/livdot/internal/streaming"
 	streamingrepo "github.com/Rahmannugar/livdot/internal/streaming/repositories"
@@ -94,6 +95,11 @@ func run(logger *slog.Logger) error {
 	router.Use(gin.Recovery())
 	health.RegisterRoutes(router, databasePool, redisClient)
 
+	limiter, err := ratelimit.New(redisClient, "livdot:ratelimit", accountSubject)
+	if err != nil {
+		return fmt.Errorf("configure rate limiter: %w", err)
+	}
+
 	authService, err := authentication.NewService(
 		databasePool,
 		redisClient,
@@ -103,13 +109,15 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure authentication: %w", err)
 	}
-	authentication.RegisterRoutes(router, authService)
+	authentication.RegisterRoutes(router, authService, limiter)
 
 	crewService, err := crews.NewService(crewsrepo.NewCrewStore(databasePool))
 	if err != nil {
 		return fmt.Errorf("configure crews: %w", err)
 	}
-	eventService, err := events.NewService(eventsrepo.NewEventStore(databasePool), crewService)
+	outboxWriter := outbox.NewWriter(databasePool)
+	eventService, err := events.NewService(
+		eventsrepo.NewEventStore(databasePool), crewService, outboxWriter)
 	if err != nil {
 		return fmt.Errorf("configure events: %w", err)
 	}
@@ -118,7 +126,6 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure payment provider: %w", err)
 	}
-	outboxWriter := outbox.NewWriter(databasePool)
 	financeService, err := finance.NewService(
 		financerepo.NewFinanceStore(databasePool), paymentProvider, outboxWriter)
 	if err != nil {
@@ -160,14 +167,14 @@ func run(logger *slog.Logger) error {
 	public := router.Group("/api")
 	authenticated := router.Group("/api")
 	authenticated.Use(authentication.RequireSession(authService))
-	crews.RegisterRoutes(public, authenticated, crewService)
-	events.RegisterRoutes(public, authenticated, eventService)
-	ticketing.RegisterRoutes(authenticated, ticketingService)
-	streaming.RegisterRoutes(authenticated, streamService)
-	finance.RegisterRoutes(authenticated, financeService)
-	webhooks.RegisterRoutes(public, webhookService)
+	crews.RegisterRoutes(public, authenticated, crewService, limiter)
+	events.RegisterRoutes(public, authenticated, eventService, limiter)
+	ticketing.RegisterRoutes(authenticated, ticketingService, limiter)
+	streaming.RegisterRoutes(authenticated, streamService, limiter)
+	finance.RegisterRoutes(authenticated, financeService, limiter)
+	webhooks.RegisterRoutes(public, webhookService, limiter)
 	if cfg.Environment != config.EnvironmentProduction {
-		webhooks.RegisterDevSimulator(public, paymentProvider, webhookService)
+		webhooks.RegisterDevSimulator(public, paymentProvider, webhookService, limiter)
 	}
 
 	server := &http.Server{
@@ -216,4 +223,13 @@ func run(logger *slog.Logger) error {
 
 	logger.Info("api shutdown completed")
 	return nil
+}
+
+// accountSubject keys account-scoped rate limits by the authenticated account,
+// falling back to the client IP when there is no session.
+func accountSubject(ctx *gin.Context) string {
+	if identity, ok := authentication.IdentityFrom(ctx); ok {
+		return identity.AccountID
+	}
+	return ""
 }

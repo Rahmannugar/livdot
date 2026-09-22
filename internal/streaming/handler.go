@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
+	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,16 +22,18 @@ type Handler struct {
 	service ServiceAPI
 }
 
-func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI) {
+func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := &Handler{service: service}
+	write := limiter.Middleware(ratelimit.PolicyWrite)
+	join := limiter.Middleware(ratelimit.PolicyPurchase)
 	authenticated.POST("/events/:id/start",
-		authentication.RequireRole(authentication.RoleHost), handler.start)
+		authentication.RequireRole(authentication.RoleHost), write, handler.start)
 	authenticated.POST("/events/:id/end",
-		authentication.RequireRole(authentication.RoleHost), handler.end)
+		authentication.RequireRole(authentication.RoleHost), write, handler.end)
 	authenticated.POST("/events/:id/stream-failure",
-		authentication.RequireRole(authentication.RoleHost), handler.fail)
+		authentication.RequireRole(authentication.RoleHost), write, handler.fail)
 	authenticated.POST("/events/:id/join",
-		authentication.RequireRole(authentication.RoleUser), handler.join)
+		authentication.RequireRole(authentication.RoleUser), join, handler.join)
 }
 
 type streamResponse struct {

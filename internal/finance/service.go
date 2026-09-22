@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
+	"github.com/Rahmannugar/livdot/internal/notifications"
 	"github.com/Rahmannugar/livdot/internal/ticketing"
 	"github.com/google/uuid"
 )
@@ -367,7 +368,7 @@ func (service *Service) settleRefund(ctx context.Context, refund Refund, provide
 		"refund.completed:"+marked.ID, map[string]any{
 			"recipientAccountId": marked.UserID,
 			"notificationType":   "refund_completed",
-			"templateKey":        "refund_receipt",
+			"templateKey":        notifications.TemplateRefundReceipt,
 			"data": map[string]any{
 				"eventId":     marked.EventID,
 				"amountMinor": marked.AmountMinor,

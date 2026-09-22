@@ -16,6 +16,7 @@ func (sender *LogSender) Send(_ context.Context, message Message) error {
 		"component", "email",
 		"to", message.To,
 		"template", message.TemplateKey,
+		"subject", message.Subject,
 	)
 	return nil
 }

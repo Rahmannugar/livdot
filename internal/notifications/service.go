@@ -87,10 +87,14 @@ func (service *Service) DeliverPending(ctx context.Context, limit int32) (int, e
 	}
 	delivered := 0
 	for _, item := range items {
+		payload := decodePayload(item.Payload)
+		subject, body := Render(item.TemplateKey, payload)
 		message := email.Message{
 			To:          item.RecipientEmail,
 			TemplateKey: item.TemplateKey,
-			Payload:     decodePayload(item.Payload),
+			Subject:     subject,
+			Body:        body,
+			Payload:     payload,
 		}
 		if err := service.sender.Send(ctx, message); err != nil {
 			backoff := retryDelay * time.Duration(item.AttemptCount)

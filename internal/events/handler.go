@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
+	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,12 +25,14 @@ type Handler struct {
 	service ServiceAPI
 }
 
-func RegisterRoutes(public gin.IRoutes, authenticated gin.IRoutes, service ServiceAPI) {
+func RegisterRoutes(public gin.IRoutes, authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := &Handler{service: service}
-	public.GET("/events", handler.list)
-	public.GET("/events/:id", handler.detail)
-	authenticated.POST("/events", authentication.RequireRole(authentication.RoleHost), handler.create)
-	authenticated.PATCH("/events/:id", authentication.RequireRole(authentication.RoleHost), handler.update)
+	read := limiter.Middleware(ratelimit.PolicyRead)
+	write := limiter.Middleware(ratelimit.PolicyWrite)
+	public.GET("/events", read, handler.list)
+	public.GET("/events/:id", read, handler.detail)
+	authenticated.POST("/events", authentication.RequireRole(authentication.RoleHost), write, handler.create)
+	authenticated.PATCH("/events/:id", authentication.RequireRole(authentication.RoleHost), write, handler.update)
 }
 
 type createEventRequest struct {

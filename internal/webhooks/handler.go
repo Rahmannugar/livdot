@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
+	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -12,8 +13,8 @@ const signatureHeader = "X-Paystack-Signature"
 
 // RegisterRoutes mounts the provider callback endpoint. It stays public because
 // authenticity comes from the provider signature, not a session.
-func RegisterRoutes(public gin.IRoutes, service *Service) {
-	public.POST("/webhooks/payments", func(ctx *gin.Context) {
+func RegisterRoutes(public gin.IRoutes, service *Service, limiter *ratelimit.Limiter) {
+	handle := func(ctx *gin.Context) {
 		raw, err := ctx.GetRawData()
 		if err != nil {
 			writeWebhookError(ctx, ErrInvalidInput)
@@ -24,7 +25,8 @@ func RegisterRoutes(public gin.IRoutes, service *Service) {
 			return
 		}
 		ctx.JSON(http.StatusOK, gin.H{"status": "received"})
-	})
+	}
+	public.POST("/webhooks/payments", limiter.Middleware(ratelimit.PolicyWebhook), handle)
 }
 
 func writeWebhookError(ctx *gin.Context, err error) {

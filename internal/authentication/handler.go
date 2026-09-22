@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/Rahmannugar/authlier/emailpassword"
+	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -22,15 +23,16 @@ func NewHandler(service ServiceAPI) *Handler {
 	return &Handler{service: service}
 }
 
-func RegisterRoutes(router gin.IRoutes, service ServiceAPI) {
+func RegisterRoutes(router gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := NewHandler(service)
-	router.POST("/api/signup/host", handler.signup(RoleHost))
-	router.POST("/api/signin/host", handler.signin(RoleHost))
-	router.POST("/api/signup/crew", handler.signup(RoleCrew))
-	router.POST("/api/signin/crew", handler.signin(RoleCrew))
-	router.POST("/api/signup/user", handler.signup(RoleUser))
-	router.POST("/api/signin/user", handler.signin(RoleUser))
-	router.POST("/api/signin/internal", handler.signin(RoleInternalAdmin))
+	guard := limiter.Middleware(ratelimit.PolicyAuth)
+	router.POST("/api/signup/host", guard, handler.signup(RoleHost))
+	router.POST("/api/signin/host", guard, handler.signin(RoleHost))
+	router.POST("/api/signup/crew", guard, handler.signup(RoleCrew))
+	router.POST("/api/signin/crew", guard, handler.signin(RoleCrew))
+	router.POST("/api/signup/user", guard, handler.signup(RoleUser))
+	router.POST("/api/signin/user", guard, handler.signin(RoleUser))
+	router.POST("/api/signin/internal", guard, handler.signin(RoleInternalAdmin))
 }
 
 type credentialRequest struct {

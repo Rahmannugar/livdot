@@ -40,9 +40,9 @@ tasks:
       - go tool tern new --migrations internal/infra/database/migrations {{.CLI_ARGS}}
 
   migrate:
-    desc: Apply pending PostgreSQL migrations
+    desc: Apply pending PostgreSQL migrations from the deploy command
     cmds:
-      - go tool tern migrate --config internal/infra/database/tern.conf --migrations internal/infra/database/migrations
+      - go run ./cmd/migrate -dir internal/infra/database/migrations
 
   migrate-down:
     desc: Roll back the latest PostgreSQL migration

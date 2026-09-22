@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
+	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -11,8 +12,8 @@ import (
 // RegisterDevSimulator mounts a development-only endpoint that signs and
 // delivers a provider webhook as Paystack would. It is never mounted in
 // production; it exists so the mocked payment flow is reachable from Postman.
-func RegisterDevSimulator(public gin.IRoutes, mock *payment.Mock, service *Service) {
-	public.POST("/dev/payments/notify", func(ctx *gin.Context) {
+func RegisterDevSimulator(public gin.IRoutes, mock *payment.Mock, service *Service, limiter *ratelimit.Limiter) {
+	public.POST("/dev/payments/notify", limiter.Middleware(ratelimit.PolicyWebhook), func(ctx *gin.Context) {
 		var request struct {
 			PurchaseID string `json:"purchaseId" binding:"required"`
 			Outcome    string `json:"outcome" binding:"required"`

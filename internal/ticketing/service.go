@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
+	"github.com/Rahmannugar/livdot/internal/notifications"
 	"github.com/google/uuid"
 )
 
@@ -312,7 +313,7 @@ func (service *Service) settlePaid(ctx context.Context, event payment.WebhookEve
 			"ticket.issued:"+result.Purchase.ID, map[string]any{
 				"recipientAccountId": result.Purchase.UserID,
 				"notificationType":   "ticket_issued",
-				"templateKey":        "ticket_receipt",
+				"templateKey":        notifications.TemplateTicketReceipt,
 				"data": map[string]any{
 					"eventId":  result.Purchase.EventID,
 					"ticketId": ticketID(result.Ticket),

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
+	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -19,12 +20,14 @@ type Handler struct {
 	service ServiceAPI
 }
 
-func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI) {
+func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := &Handler{service: service}
+	purchase := limiter.Middleware(ratelimit.PolicyPurchase)
+	read := limiter.Middleware(ratelimit.PolicyRead)
 	authenticated.POST("/events/:id/purchase",
-		authentication.RequireRole(authentication.RoleUser), handler.purchase)
+		authentication.RequireRole(authentication.RoleUser), purchase, handler.purchase)
 	authenticated.GET("/tickets/:id",
-		authentication.RequireRole(authentication.RoleUser), handler.ticket)
+		authentication.RequireRole(authentication.RoleUser), read, handler.ticket)
 }
 
 type purchaseRequest struct {

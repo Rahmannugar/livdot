@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
+	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,22 +24,24 @@ type Handler struct {
 	service ServiceAPI
 }
 
-func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI) {
+func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := &Handler{service: service}
+	read := limiter.Middleware(ratelimit.PolicyRead)
+	write := limiter.Middleware(ratelimit.PolicyWrite)
 	authenticated.POST("/events/:id/refund",
-		authentication.RequireRole(authentication.RoleInternalAdmin), handler.refundEvent)
+		authentication.RequireRole(authentication.RoleInternalAdmin), write, handler.refundEvent)
 	authenticated.GET("/refunds",
 		authentication.RequireRole(authentication.RoleUser, authentication.RoleInternalAdmin),
-		handler.listRefunds)
+		read, handler.listRefunds)
 	authenticated.GET("/refunds/:id",
 		authentication.RequireRole(authentication.RoleUser, authentication.RoleInternalAdmin),
-		handler.getRefund)
+		read, handler.getRefund)
 	authenticated.GET("/payouts",
 		authentication.RequireRole(authentication.RoleHost, authentication.RoleInternalAdmin),
-		handler.listPayouts)
+		read, handler.listPayouts)
 	authenticated.GET("/payouts/:id",
 		authentication.RequireRole(authentication.RoleHost, authentication.RoleInternalAdmin),
-		handler.getPayout)
+		read, handler.getPayout)
 }
 
 type refundResponse struct {

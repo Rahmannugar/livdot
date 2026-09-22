@@ -10,11 +10,11 @@ import (
 	"github.com/jackc/tern/v2/migrate"
 )
 
-// the migrations directory is not present, so migrations run out of band.
+// the migrations directory is not present in this build.
 var ErrMigrationsUnavailable = errors.New("migrations directory is not available")
 
 // Migrate applies pending Tern migrations. The version table matches tern.conf
-// so the CLI and the worker agree on the schema version.
+// so the CLI and the deploy command agree on the schema version.
 func Migrate(ctx context.Context, pool *pgxpool.Pool, directory string) error {
 	if _, err := os.Stat(directory); err != nil {
 		return ErrMigrationsUnavailable

@@ -1,4 +1,18 @@
 services:
+  migrate:
+    build:
+      context: .
+    entrypoint: ["livdot-migrate", "-dir", "/migrations"]
+    environment:
+      LIVDOT_DATABASE_HOST: postgres
+      LIVDOT_DATABASE_PORT: 5432
+      LIVDOT_DATABASE_USER: livdot
+      LIVDOT_DATABASE_PASSWORD: ${LIVDOT_DATABASE_PASSWORD:?set LIVDOT_DATABASE_PASSWORD}
+      LIVDOT_DATABASE_NAME: livdot
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build:
       context: .
@@ -15,6 +29,19 @@ services:
     ports:
       - "8080:8080"
     depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   worker:
     build:
       context: .
@@ -33,17 +60,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-
-  postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/health/ready"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 5s
+      migrate:
+        condition: service_completed_successfully
 
   postgres:
     image: postgres:18-alpine

@@ -21,11 +21,11 @@ import (
 	"github.com/Rahmannugar/livdot/internal/infra/outbox"
 	outboxrepo "github.com/Rahmannugar/livdot/internal/infra/outbox/repositories"
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
+	"github.com/Rahmannugar/livdot/internal/infra/stream"
 	"github.com/Rahmannugar/livdot/internal/notifications"
 	notificationsrepo "github.com/Rahmannugar/livdot/internal/notifications/repositories"
 	"github.com/Rahmannugar/livdot/internal/ticketing"
 	ticketingrepo "github.com/Rahmannugar/livdot/internal/ticketing/repositories"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -33,6 +33,7 @@ const (
 	startupTimeout  = 15 * time.Second
 	batchSize       = 50
 	cycleInterval   = 5 * time.Second
+	streamBlock     = time.Second
 	startupLockKey  = "livdot:worker:startup"
 	startupLockTTL  = 5 * time.Minute
 	startupLockWait = 30 * time.Second
@@ -76,9 +77,9 @@ func run(logger *slog.Logger) error {
 	}
 	defer redisClient.Close()
 
-	// only one instance runs startup work; the rest wait so they never process
-	// jobs against a schema that is still migrating.
-	if err := initialize(startupContext, logger, databasePool, redisClient, cfg); err != nil {
+	// startup is serialized so boot work never runs
+	// concurrently across instances.
+	if err := initialize(startupContext, logger, redisClient); err != nil {
 		return err
 	}
 
@@ -98,9 +99,20 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("configure notifications: %w", err)
 	}
 	dispatcher := notifications.NewDispatcher(notificationService, authrepo.NewAccountDirectory(databasePool))
-	publisher, err := outbox.NewPublisher(outboxrepo.NewOutboxStore(databasePool), dispatcher)
+	bridge, err := stream.NewBridge(redisClient, stream.DefaultName)
+	if err != nil {
+		return fmt.Errorf("configure stream bridge: %w", err)
+	}
+	publisher, err := outbox.NewPublisher(outboxrepo.NewOutboxStore(databasePool), bridge)
 	if err != nil {
 		return fmt.Errorf("configure outbox publisher: %w", err)
+	}
+	consumer, err := stream.NewConsumer(redisClient, stream.DefaultName, stream.DefaultGroup, consumerName())
+	if err != nil {
+		return fmt.Errorf("configure stream consumer: %w", err)
+	}
+	if err := consumer.EnsureGroup(startupContext); err != nil {
+		return err
 	}
 	ticketingService, err := ticketing.NewService(
 		ticketingrepo.NewTicketStore(databasePool), paymentProvider, financeService, outboxWriter)
@@ -111,7 +123,7 @@ func run(logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	logger.Info("worker started", "interval", cycleInterval.String())
+	logger.Info("worker started", "interval", cycleInterval.String(), "consumer", consumerName())
 	ticker := time.NewTicker(cycleInterval)
 	defer ticker.Stop()
 	for {
@@ -120,25 +132,16 @@ func run(logger *slog.Logger) error {
 			logger.Info("worker shutdown")
 			return nil
 		case <-ticker.C:
-			runCycle(ctx, logger, publisher, notificationService, ticketingService)
+			runCycle(ctx, logger, publisher, consumer, dispatcher, notificationService, ticketingService)
 		}
 	}
 }
 
-// initialize serializes boot work behind a Redis lock. All instances run the
-// same idempotent migrations, but only one at a time.
-func initialize(
-	ctx context.Context,
-	logger *slog.Logger,
-	pool *pgxpool.Pool,
-	redisClient *redis.Client,
-	cfg config.Config,
-) error {
+func initialize(ctx context.Context, logger *slog.Logger, redisClient *redis.Client) error {
 	startupLock, err := lock.New(redisClient, startupLockKey, startupLockTTL)
 	if err != nil {
 		return fmt.Errorf("configure startup lock: %w", err)
 	}
-
 	deadline := time.Now().Add(startupLockWait)
 	for {
 		if err := startupLock.Acquire(ctx); err == nil {
@@ -155,23 +158,17 @@ func initialize(
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
-	defer func() { _ = startupLock.Release(context.Background()) }()
-
-	if err := database.Migrate(ctx, pool, cfg.MigrationsDir); err != nil {
-		if errors.Is(err, database.ErrMigrationsUnavailable) {
-			logger.Info("migrations directory unavailable; assuming schema is current",
-				"directory", cfg.MigrationsDir)
-			return nil
-		}
-		return fmt.Errorf("apply migrations: %w", err)
-	}
-	return nil
+	logger.Info("worker startup lock acquired")
+	// reserved for one-time boot work; nothing to run yet.
+	return startupLock.Release(context.Background())
 }
 
 func runCycle(
 	ctx context.Context,
 	logger *slog.Logger,
 	publisher *outbox.Publisher,
+	consumer *stream.Consumer,
+	dispatcher *notifications.Dispatcher,
 	notificationService *notifications.Service,
 	ticketingService *ticketing.Service,
 ) {
@@ -179,6 +176,11 @@ func runCycle(
 		logger.Error("outbox publish failed", "error", err)
 	} else if published > 0 {
 		logger.Info("outbox events published", "count", published)
+	}
+	if consumed, err := consumer.Consume(ctx, batchSize, dispatcher, streamBlock); err != nil {
+		logger.Error("stream consume failed", "error", err)
+	} else if consumed > 0 {
+		logger.Info("stream events consumed", "count", consumed)
 	}
 	if delivered, err := notificationService.DeliverPending(ctx, batchSize); err != nil {
 		logger.Error("notification delivery failed", "error", err)
@@ -190,4 +192,12 @@ func runCycle(
 	} else if expired > 0 {
 		logger.Info("reservations expired", "count", expired)
 	}
+}
+
+func consumerName() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "worker"
+	}
+	return fmt.Sprintf("%s-%d", hostname, os.Getpid())
 }

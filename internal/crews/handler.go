@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
+	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -22,12 +23,14 @@ type Handler struct {
 	service ServiceAPI
 }
 
-func RegisterRoutes(public gin.IRoutes, authenticated gin.IRoutes, service ServiceAPI) {
+func RegisterRoutes(public gin.IRoutes, authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	_ = public
 	handler := &Handler{service: service}
-	authenticated.GET("/crews", authentication.RequireRole(authentication.RoleHost), handler.list)
-	authenticated.GET("/account/crews", authentication.RequireRole(authentication.RoleCrew), handler.get)
-	authenticated.PATCH("/account/crews", authentication.RequireRole(authentication.RoleCrew), handler.update)
+	read := limiter.Middleware(ratelimit.PolicyRead)
+	write := limiter.Middleware(ratelimit.PolicyWrite)
+	authenticated.GET("/crews", authentication.RequireRole(authentication.RoleHost), read, handler.list)
+	authenticated.GET("/account/crews", authentication.RequireRole(authentication.RoleCrew), read, handler.get)
+	authenticated.PATCH("/account/crews", authentication.RequireRole(authentication.RoleCrew), write, handler.update)
 }
 
 type profileResponse struct {
