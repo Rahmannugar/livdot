@@ -12,6 +12,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelEvent = `-- name: CancelEvent :one
+UPDATE events
+SET status = 'cancelled',
+    cancelled_at = now(),
+    updated_at = now()
+WHERE id = $1
+  AND status = 'upcoming'
+RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
+          status, total_tickets, available_tickets, starts_at, ends_at,
+          cancelled_at, created_at, updated_at
+`
+
+func (q *Queries) CancelEvent(ctx context.Context, id uuid.UUID) (Event, error) {
+	row := q.db.QueryRow(ctx, cancelEvent, id)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.HostID,
+		&i.AssignedCrewID,
+		&i.Name,
+		&i.AmountMinor,
+		&i.DurationSeconds,
+		&i.Status,
+		&i.TotalTickets,
+		&i.AvailableTickets,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.CancelledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createEvent = `-- name: CreateEvent :one
 INSERT INTO events (
     id,
@@ -105,23 +139,117 @@ func (q *Queries) GetEvent(ctx context.Context, id uuid.UUID) (Event, error) {
 	return i, err
 }
 
-const listUpcomingEvents = `-- name: ListUpcomingEvents :many
+const getEventDetail = `-- name: GetEventDetail :one
+SELECT e.id, e.host_id, e.assigned_crew_id, e.name, e.amount_minor,
+       e.duration_seconds, e.status, e.total_tickets, e.available_tickets,
+       e.starts_at, e.ends_at, e.cancelled_at, e.created_at, e.updated_at,
+       c.crew_name, c.availability_status
+FROM events AS e
+LEFT JOIN crews AS c ON c.account_id = e.assigned_crew_id
+WHERE e.id = $1
+`
+
+type GetEventDetailRow struct {
+	ID                 uuid.UUID
+	HostID             uuid.UUID
+	AssignedCrewID     pgtype.UUID
+	Name               string
+	AmountMinor        int64
+	DurationSeconds    int32
+	Status             EventStatus
+	TotalTickets       int32
+	AvailableTickets   int32
+	StartsAt           pgtype.Timestamptz
+	EndsAt             pgtype.Timestamptz
+	CancelledAt        pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	CrewName           *string
+	AvailabilityStatus *CrewAvailabilityStatus
+}
+
+func (q *Queries) GetEventDetail(ctx context.Context, id uuid.UUID) (GetEventDetailRow, error) {
+	row := q.db.QueryRow(ctx, getEventDetail, id)
+	var i GetEventDetailRow
+	err := row.Scan(
+		&i.ID,
+		&i.HostID,
+		&i.AssignedCrewID,
+		&i.Name,
+		&i.AmountMinor,
+		&i.DurationSeconds,
+		&i.Status,
+		&i.TotalTickets,
+		&i.AvailableTickets,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.CancelledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CrewName,
+		&i.AvailabilityStatus,
+	)
+	return i, err
+}
+
+const listEvents = `-- name: ListEvents :many
 SELECT id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
        status, total_tickets, available_tickets, starts_at, ends_at,
        cancelled_at, created_at, updated_at
 FROM events
-WHERE status = 'upcoming'
-ORDER BY starts_at ASC
-LIMIT $1 OFFSET $2
+WHERE ($1::text IS NULL OR name ILIKE '%' || $1::text || '%')
+  AND ($2::event_status IS NULL OR status = $2::event_status)
+  AND (
+      $3::integer IS NULL
+      OR duration_seconds >= $3::integer
+  )
+  AND (
+      $4::integer IS NULL
+      OR duration_seconds <= $4::integer
+  )
+  AND (
+      $5::bigint IS NULL
+      OR amount_minor >= $5::bigint
+  )
+  AND (
+      $6::bigint IS NULL
+      OR amount_minor <= $6::bigint
+  )
+  AND (
+      $7::timestamptz IS NULL
+      OR (starts_at, id) > (
+          $7::timestamptz,
+          $8::uuid
+      )
+  )
+ORDER BY starts_at ASC, id ASC
+LIMIT $9
 `
 
-type ListUpcomingEventsParams struct {
-	Limit  int32
-	Offset int32
+type ListEventsParams struct {
+	Name           *string
+	Status         *EventStatus
+	DurationGte    *int32
+	DurationLte    *int32
+	AmountGte      *int64
+	AmountLte      *int64
+	CursorStartsAt pgtype.Timestamptz
+	CursorID       pgtype.UUID
+	PageSize       int32
 }
 
-func (q *Queries) ListUpcomingEvents(ctx context.Context, arg ListUpcomingEventsParams) ([]Event, error) {
-	rows, err := q.db.Query(ctx, listUpcomingEvents, arg.Limit, arg.Offset)
+func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listEvents,
+		arg.Name,
+		arg.Status,
+		arg.DurationGte,
+		arg.DurationLte,
+		arg.AmountGte,
+		arg.AmountLte,
+		arg.CursorStartsAt,
+		arg.CursorID,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +297,67 @@ RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
 
 func (q *Queries) ReserveEventTicket(ctx context.Context, id uuid.UUID) (Event, error) {
 	row := q.db.QueryRow(ctx, reserveEventTicket, id)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.HostID,
+		&i.AssignedCrewID,
+		&i.Name,
+		&i.AmountMinor,
+		&i.DurationSeconds,
+		&i.Status,
+		&i.TotalTickets,
+		&i.AvailableTickets,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.CancelledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateEvent = `-- name: UpdateEvent :one
+UPDATE events
+SET name = $2,
+    amount_minor = $3,
+    duration_seconds = $4,
+    total_tickets = $5,
+    available_tickets = $5 - (total_tickets - available_tickets),
+    assigned_crew_id = $6,
+    starts_at = $7,
+    ends_at = $8,
+    updated_at = now()
+WHERE id = $1
+  AND status = 'upcoming'
+  AND $5 >= total_tickets - available_tickets
+RETURNING id, host_id, assigned_crew_id, name, amount_minor, duration_seconds,
+          status, total_tickets, available_tickets, starts_at, ends_at,
+          cancelled_at, created_at, updated_at
+`
+
+type UpdateEventParams struct {
+	ID              uuid.UUID
+	Name            string
+	AmountMinor     int64
+	DurationSeconds int32
+	TotalTickets    int32
+	AssignedCrewID  pgtype.UUID
+	StartsAt        pgtype.Timestamptz
+	EndsAt          pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event, error) {
+	row := q.db.QueryRow(ctx, updateEvent,
+		arg.ID,
+		arg.Name,
+		arg.AmountMinor,
+		arg.DurationSeconds,
+		arg.TotalTickets,
+		arg.AssignedCrewID,
+		arg.StartsAt,
+		arg.EndsAt,
+	)
 	var i Event
 	err := row.Scan(
 		&i.ID,

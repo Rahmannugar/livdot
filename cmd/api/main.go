@@ -13,6 +13,10 @@ import (
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
 	"github.com/Rahmannugar/livdot/internal/config"
+	"github.com/Rahmannugar/livdot/internal/crews"
+	crewsrepo "github.com/Rahmannugar/livdot/internal/crews/repositories"
+	"github.com/Rahmannugar/livdot/internal/events"
+	eventsrepo "github.com/Rahmannugar/livdot/internal/events/repositories"
 	"github.com/Rahmannugar/livdot/internal/health"
 	"github.com/Rahmannugar/livdot/internal/infra/cache"
 	"github.com/Rahmannugar/livdot/internal/infra/database"
@@ -89,6 +93,23 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("configure authentication: %w", err)
 	}
 	authentication.RegisterRoutes(router, authService)
+
+	crewService, err := crews.NewService(crewsrepo.NewCrewStore(databasePool))
+	if err != nil {
+		return fmt.Errorf("configure crews: %w", err)
+	}
+	eventService, err := events.NewService(eventsrepo.NewEventStore(databasePool), crewService)
+	if err != nil {
+		return fmt.Errorf("configure events: %w", err)
+	}
+
+	// Public browsing stays open; mutation routes resolve the session first so
+	// RequireRole can authorize against the authenticated identity.
+	public := router.Group("/api")
+	authenticated := router.Group("/api")
+	authenticated.Use(authentication.RequireSession(authService))
+	crews.RegisterRoutes(public, authenticated, crewService)
+	events.RegisterRoutes(public, authenticated, eventService)
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address(),

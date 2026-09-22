@@ -12,6 +12,48 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type CrewAvailabilityStatus string
+
+const (
+	CrewAvailabilityStatusAvailable   CrewAvailabilityStatus = "available"
+	CrewAvailabilityStatusUnavailable CrewAvailabilityStatus = "unavailable"
+)
+
+func (e *CrewAvailabilityStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = CrewAvailabilityStatus(s)
+	case string:
+		*e = CrewAvailabilityStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for CrewAvailabilityStatus: %T", src)
+	}
+	return nil
+}
+
+type NullCrewAvailabilityStatus struct {
+	CrewAvailabilityStatus CrewAvailabilityStatus
+	Valid                  bool // Valid is true if CrewAvailabilityStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullCrewAvailabilityStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.CrewAvailabilityStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.CrewAvailabilityStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullCrewAvailabilityStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.CrewAvailabilityStatus), nil
+}
+
 type EventStatus string
 
 const (

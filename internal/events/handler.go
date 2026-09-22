@@ -1,0 +1,311 @@
+package events
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/Rahmannugar/livdot/internal/authentication"
+	"github.com/gin-gonic/gin"
+)
+
+type ServiceAPI interface {
+	Create(ctx context.Context, hostID string, input CreateInput) (Event, error)
+	List(ctx context.Context, filter Filter) (Page, error)
+	Detail(ctx context.Context, id string) (Event, error)
+	Update(ctx context.Context, hostID, id string, input UpdateInput) (Event, error)
+}
+
+type Handler struct {
+	service ServiceAPI
+}
+
+func RegisterRoutes(public gin.IRoutes, authenticated gin.IRoutes, service ServiceAPI) {
+	handler := &Handler{service: service}
+	public.GET("/events", handler.list)
+	public.GET("/events/:id", handler.detail)
+	authenticated.POST("/events", authentication.RequireRole(authentication.RoleHost), handler.create)
+	authenticated.PATCH("/events/:id", authentication.RequireRole(authentication.RoleHost), handler.update)
+}
+
+type createEventRequest struct {
+	Name            string     `json:"name"`
+	AmountMinor     int64      `json:"amountMinor"`
+	DurationSeconds int32      `json:"durationSeconds"`
+	TotalTickets    int32      `json:"totalTickets"`
+	StartsAt        *time.Time `json:"startsAt"`
+	AssignedCrewID  *string    `json:"assignedCrewId"`
+}
+
+type updateEventRequest struct {
+	Name            *string         `json:"name"`
+	AmountMinor     *int64          `json:"amountMinor"`
+	DurationSeconds *int32          `json:"durationSeconds"`
+	TotalTickets    *int32          `json:"totalTickets"`
+	StartsAt        *time.Time      `json:"startsAt"`
+	AssignedCrewID  json.RawMessage `json:"assignedCrewId"`
+	Status          *string         `json:"status"`
+}
+
+type crewResponse struct {
+	AccountID    string `json:"accountId"`
+	Name         string `json:"name"`
+	Availability string `json:"availability"`
+}
+
+type eventResponse struct {
+	ID               string        `json:"id"`
+	HostID           string        `json:"hostId"`
+	AssignedCrewID   *string       `json:"assignedCrewId"`
+	AssignedCrew     *crewResponse `json:"assignedCrew,omitempty"`
+	Name             string        `json:"name"`
+	AmountMinor      int64         `json:"amountMinor"`
+	DurationSeconds  int32         `json:"durationSeconds"`
+	Status           string        `json:"status"`
+	TotalTickets     int32         `json:"totalTickets"`
+	AvailableTickets int32         `json:"availableTickets"`
+	StartsAt         time.Time     `json:"startsAt"`
+	EndsAt           time.Time     `json:"endsAt"`
+	CancelledAt      *time.Time    `json:"cancelledAt"`
+	CreatedAt        time.Time     `json:"createdAt"`
+	UpdatedAt        time.Time     `json:"updatedAt"`
+}
+
+func (handler *Handler) create(ctx *gin.Context) {
+	identity, ok := authentication.IdentityFrom(ctx)
+	if !ok {
+		writeEventError(ctx, authentication.ErrUnauthenticated)
+		return
+	}
+	var request createEventRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		writeEventError(ctx, ErrInvalidInput)
+		return
+	}
+
+	input := CreateInput{
+		Name:            request.Name,
+		AmountMinor:     request.AmountMinor,
+		DurationSeconds: request.DurationSeconds,
+		TotalTickets:    request.TotalTickets,
+		AssignedCrewID:  request.AssignedCrewID,
+	}
+	if request.StartsAt != nil {
+		input.StartsAt = *request.StartsAt
+	}
+
+	event, err := handler.service.Create(ctx.Request.Context(), identity.AccountID, input)
+	if err != nil {
+		writeEventError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusCreated, newEventResponse(event))
+}
+
+func (handler *Handler) list(ctx *gin.Context) {
+	filter, ok := parseEventFilter(ctx)
+	if !ok {
+		writeEventError(ctx, ErrInvalidInput)
+		return
+	}
+	page, err := handler.service.List(ctx.Request.Context(), filter)
+	if err != nil {
+		writeEventError(ctx, err)
+		return
+	}
+	response := make([]eventResponse, 0, len(page.Events))
+	for _, event := range page.Events {
+		response = append(response, newEventResponse(event))
+	}
+	ctx.JSON(http.StatusOK, gin.H{"events": response, "nextCursor": page.NextCursor})
+}
+
+func (handler *Handler) detail(ctx *gin.Context) {
+	event, err := handler.service.Detail(ctx.Request.Context(), ctx.Param("id"))
+	if err != nil {
+		writeEventError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, newEventResponse(event))
+}
+
+func (handler *Handler) update(ctx *gin.Context) {
+	identity, ok := authentication.IdentityFrom(ctx)
+	if !ok {
+		writeEventError(ctx, authentication.ErrUnauthenticated)
+		return
+	}
+	var request updateEventRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		writeEventError(ctx, ErrInvalidInput)
+		return
+	}
+
+	input := UpdateInput{
+		Name:            request.Name,
+		AmountMinor:     request.AmountMinor,
+		DurationSeconds: request.DurationSeconds,
+		TotalTickets:    request.TotalTickets,
+		StartsAt:        request.StartsAt,
+	}
+	if request.Status != nil {
+		if *request.Status != string(StatusCancelled) {
+			writeEventError(ctx, ErrInvalidInput)
+			return
+		}
+		input.Cancel = true
+	}
+	if len(request.AssignedCrewID) > 0 {
+		input.AssignedCrewSet = true
+		if trimmed := bytes.TrimSpace(request.AssignedCrewID); string(trimmed) != "null" {
+			var crewID string
+			if err := json.Unmarshal(trimmed, &crewID); err != nil || crewID == "" {
+				writeEventError(ctx, ErrInvalidInput)
+				return
+			}
+			input.AssignedCrewID = &crewID
+		}
+	}
+
+	event, err := handler.service.Update(ctx.Request.Context(), identity.AccountID, ctx.Param("id"), input)
+	if err != nil {
+		writeEventError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, newEventResponse(event))
+}
+
+func parseEventFilter(ctx *gin.Context) (Filter, bool) {
+	var filter Filter
+	if name := ctx.Query("name"); name != "" {
+		filter.Name = &name
+	}
+	if status := ctx.Query("status"); status != "" {
+		parsed := Status(status)
+		filter.Status = &parsed
+	}
+	durationGte, ok := optionalInt32(ctx, "duration[gte]")
+	if !ok {
+		return Filter{}, false
+	}
+	durationLte, ok := optionalInt32(ctx, "duration[lte]")
+	if !ok {
+		return Filter{}, false
+	}
+	amountGte, ok := optionalInt64(ctx, "amount[gte]")
+	if !ok {
+		return Filter{}, false
+	}
+	amountLte, ok := optionalInt64(ctx, "amount[lte]")
+	if !ok {
+		return Filter{}, false
+	}
+	pageSize, ok := optionalInt32(ctx, "pageSize")
+	if !ok {
+		return Filter{}, false
+	}
+	if raw := ctx.Query("cursor"); raw != "" {
+		cursor, err := DecodeCursor(raw)
+		if err != nil {
+			return Filter{}, false
+		}
+		filter.Cursor = cursor
+	}
+
+	filter.DurationGte = durationGte
+	filter.DurationLte = durationLte
+	filter.AmountGte = amountGte
+	filter.AmountLte = amountLte
+	if pageSize != nil {
+		filter.PageSize = *pageSize
+	}
+	return filter, true
+}
+
+func newEventResponse(event Event) eventResponse {
+	response := eventResponse{
+		ID:               event.ID,
+		HostID:           event.HostID,
+		AssignedCrewID:   event.AssignedCrewID,
+		Name:             event.Name,
+		AmountMinor:      event.AmountMinor,
+		DurationSeconds:  event.DurationSeconds,
+		Status:           string(event.Status),
+		TotalTickets:     event.TotalTickets,
+		AvailableTickets: event.AvailableTickets,
+		StartsAt:         event.StartsAt,
+		EndsAt:           event.EndsAt,
+		CancelledAt:      event.CancelledAt,
+		CreatedAt:        event.CreatedAt,
+		UpdatedAt:        event.UpdatedAt,
+	}
+	if event.AssignedCrew != nil {
+		response.AssignedCrew = &crewResponse{
+			AccountID:    event.AssignedCrew.AccountID,
+			Name:         event.AssignedCrew.Name,
+			Availability: event.AssignedCrew.Availability,
+		}
+	}
+	return response
+}
+
+func optionalInt32(ctx *gin.Context, key string) (*int32, bool) {
+	raw := ctx.Query(key)
+	if raw == "" {
+		return nil, true
+	}
+	value, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil {
+		return nil, false
+	}
+	parsed := int32(value)
+	return &parsed, true
+}
+
+func optionalInt64(ctx *gin.Context, key string) (*int64, bool) {
+	raw := ctx.Query(key)
+	if raw == "" {
+		return nil, true
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return nil, false
+	}
+	return &value, true
+}
+
+func writeEventError(ctx *gin.Context, err error) {
+	status := http.StatusInternalServerError
+	code := "events_unavailable"
+	message := "the event request could not be completed"
+	switch {
+	case errors.Is(err, authentication.ErrUnauthenticated):
+		status = http.StatusUnauthorized
+		code = "unauthenticated"
+		message = "a valid session token is required"
+	case errors.Is(err, ErrInvalidInput):
+		status = http.StatusBadRequest
+		code = "invalid_request"
+		message = "event details are invalid"
+	case errors.Is(err, ErrNotFound):
+		status = http.StatusNotFound
+		code = "event_not_found"
+		message = "no event exists for this identifier"
+	case errors.Is(err, ErrForbidden):
+		status = http.StatusForbidden
+		code = "forbidden"
+		message = "this host does not own the event"
+	case errors.Is(err, ErrNotUpdatable),
+		errors.Is(err, ErrNotCancellable),
+		errors.Is(err, ErrTicketCountConflict),
+		errors.Is(err, ErrConflict):
+		status = http.StatusConflict
+		code = "event_conflict"
+		message = "the event cannot be changed in its current state"
+	}
+	ctx.JSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
+}
