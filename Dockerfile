@@ -1,14 +1,24 @@
+# syntax=docker/dockerfile:1
+
 FROM golang:1.26-alpine AS build
 
 WORKDIR /src
 
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/livdot-api ./cmd/api
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/livdot-worker ./cmd/worker
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/livdot-migrate ./cmd/migrate
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/livdot-api ./cmd/api
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/livdot-worker ./cmd/worker
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/livdot-migrate ./cmd/migrate
 
 FROM alpine:3.22
 
@@ -22,4 +32,3 @@ COPY --from=build /out/livdot-migrate /usr/local/bin/livdot-migrate
 EXPOSE 8080
 
 ENTRYPOINT ["livdot-api"]
-

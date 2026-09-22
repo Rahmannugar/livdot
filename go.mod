@@ -109,5 +109,3 @@ tool (
 	github.com/jackc/tern/v2
 	github.com/sqlc-dev/sqlc/cmd/sqlc
 )
-
-replace github.com/Rahmannugar/authlier => ../Consumel/authlier
