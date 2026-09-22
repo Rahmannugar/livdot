@@ -12,6 +12,93 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type EventStatus string
+
+const (
+	EventStatusUpcoming  EventStatus = "upcoming"
+	EventStatusLive      EventStatus = "live"
+	EventStatusEnded     EventStatus = "ended"
+	EventStatusCancelled EventStatus = "cancelled"
+)
+
+func (e *EventStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = EventStatus(s)
+	case string:
+		*e = EventStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for EventStatus: %T", src)
+	}
+	return nil
+}
+
+type NullEventStatus struct {
+	EventStatus EventStatus
+	Valid       bool // Valid is true if EventStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullEventStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.EventStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.EventStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullEventStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.EventStatus), nil
+}
+
+type LedgerEntryType string
+
+const (
+	LedgerEntryTypeCharge LedgerEntryType = "charge"
+	LedgerEntryTypeRefund LedgerEntryType = "refund"
+	LedgerEntryTypePayout LedgerEntryType = "payout"
+)
+
+func (e *LedgerEntryType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = LedgerEntryType(s)
+	case string:
+		*e = LedgerEntryType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for LedgerEntryType: %T", src)
+	}
+	return nil
+}
+
+type NullLedgerEntryType struct {
+	LedgerEntryType LedgerEntryType
+	Valid           bool // Valid is true if LedgerEntryType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullLedgerEntryType) Scan(value interface{}) error {
+	if value == nil {
+		ns.LedgerEntryType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.LedgerEntryType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullLedgerEntryType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.LedgerEntryType), nil
+}
+
 type PayoutStatus string
 
 const (
@@ -53,6 +140,51 @@ func (ns NullPayoutStatus) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.PayoutStatus), nil
+}
+
+type PurchaseStatus string
+
+const (
+	PurchaseStatusInitiated  PurchaseStatus = "initiated"
+	PurchaseStatusProcessing PurchaseStatus = "processing"
+	PurchaseStatusPaid       PurchaseStatus = "paid"
+	PurchaseStatusRefunded   PurchaseStatus = "refunded"
+	PurchaseStatusFailed     PurchaseStatus = "failed"
+)
+
+func (e *PurchaseStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PurchaseStatus(s)
+	case string:
+		*e = PurchaseStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PurchaseStatus: %T", src)
+	}
+	return nil
+}
+
+type NullPurchaseStatus struct {
+	PurchaseStatus PurchaseStatus
+	Valid          bool // Valid is true if PurchaseStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPurchaseStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.PurchaseStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PurchaseStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPurchaseStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PurchaseStatus), nil
 }
 
 type RefundStatus string
@@ -98,6 +230,49 @@ func (ns NullRefundStatus) Value() (driver.Value, error) {
 	return string(ns.RefundStatus), nil
 }
 
+type StreamStatus string
+
+const (
+	StreamStatusLive   StreamStatus = "live"
+	StreamStatusFailed StreamStatus = "failed"
+	StreamStatusEnded  StreamStatus = "ended"
+)
+
+func (e *StreamStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = StreamStatus(s)
+	case string:
+		*e = StreamStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for StreamStatus: %T", src)
+	}
+	return nil
+}
+
+type NullStreamStatus struct {
+	StreamStatus StreamStatus
+	Valid        bool // Valid is true if StreamStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullStreamStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.StreamStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.StreamStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullStreamStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.StreamStatus), nil
+}
+
 type EventPayout struct {
 	ID               uuid.UUID
 	EventID          uuid.UUID
@@ -115,6 +290,26 @@ type EventPayout struct {
 	ProcessedAt      pgtype.Timestamptz
 	RetriedAt        pgtype.Timestamptz
 	PaidAt           pgtype.Timestamptz
+}
+
+type EventPurchase struct {
+	ID                uuid.UUID
+	EventID           uuid.UUID
+	UserID            uuid.UUID
+	AmountMinor       int64
+	Status            PurchaseStatus
+	Provider          string
+	ProviderPaymentID *string
+	IdempotencyKey    string
+	CheckoutUrl       *string
+	AttemptCount      int32
+	NextAttemptAt     pgtype.Timestamptz
+	LockedAt          pgtype.Timestamptz
+	LastError         *string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	PaidAt            pgtype.Timestamptz
+	RefundedAt        pgtype.Timestamptz
 }
 
 type EventRefund struct {
@@ -135,4 +330,15 @@ type EventRefund struct {
 	ProcessedAt      pgtype.Timestamptz
 	RetriedAt        pgtype.Timestamptz
 	RefundedAt       pgtype.Timestamptz
+}
+
+type LedgerEntry struct {
+	ID          uuid.UUID
+	EventID     uuid.UUID
+	EntryType   LedgerEntryType
+	AmountMinor int64
+	PurchaseID  pgtype.UUID
+	RefundID    pgtype.UUID
+	PayoutID    pgtype.UUID
+	CreatedAt   pgtype.Timestamptz
 }

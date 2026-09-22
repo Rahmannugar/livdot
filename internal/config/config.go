@@ -23,6 +23,7 @@ const (
 	defaultSessionCacheTTL        = 15 * time.Minute
 	defaultPaymentBaseURL         = "https://mock.paystack.local"
 	defaultPaymentSecret          = "livdot-development-webhook-secret"
+	defaultStreamingBaseURL       = "https://mock.livekit.local"
 )
 
 type Environment string
@@ -40,6 +41,7 @@ type Config struct {
 	Redis       Redis
 	Session     Session
 	Payment     Payment
+	Streaming   Streaming
 }
 
 type HTTP struct {
@@ -67,6 +69,10 @@ type Session struct {
 
 type Payment struct {
 	Secret  string
+	BaseURL string
+}
+
+type Streaming struct {
 	BaseURL string
 }
 
@@ -110,6 +116,9 @@ func Load() (Config, error) {
 		Payment: Payment{
 			Secret:  defaultPaymentSecret,
 			BaseURL: defaultPaymentBaseURL,
+		},
+		Streaming: Streaming{
+			BaseURL: defaultStreamingBaseURL,
 		},
 	}
 	if k.Exists("environment") {
@@ -162,6 +171,9 @@ func Load() (Config, error) {
 	if k.Exists("payment.base_url") {
 		cfg.Payment.BaseURL = k.String("payment.base_url")
 	}
+	if k.Exists("streaming.base_url") {
+		cfg.Streaming.BaseURL = k.String("streaming.base_url")
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -213,6 +225,9 @@ func (cfg Config) Validate() error {
 	}
 	if strings.TrimSpace(cfg.Payment.BaseURL) == "" {
 		return fmt.Errorf("LIVDOT_PAYMENT_BASE_URL is required")
+	}
+	if strings.TrimSpace(cfg.Streaming.BaseURL) == "" {
+		return fmt.Errorf("LIVDOT_STREAMING_BASE_URL is required")
 	}
 	return nil
 }

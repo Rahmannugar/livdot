@@ -12,6 +12,92 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type EventStatus string
+
+const (
+	EventStatusUpcoming  EventStatus = "upcoming"
+	EventStatusLive      EventStatus = "live"
+	EventStatusEnded     EventStatus = "ended"
+	EventStatusCancelled EventStatus = "cancelled"
+)
+
+func (e *EventStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = EventStatus(s)
+	case string:
+		*e = EventStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for EventStatus: %T", src)
+	}
+	return nil
+}
+
+type NullEventStatus struct {
+	EventStatus EventStatus
+	Valid       bool // Valid is true if EventStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullEventStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.EventStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.EventStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullEventStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.EventStatus), nil
+}
+
+type MembershipStatus string
+
+const (
+	MembershipStatusActive  MembershipStatus = "active"
+	MembershipStatusRevoked MembershipStatus = "revoked"
+)
+
+func (e *MembershipStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = MembershipStatus(s)
+	case string:
+		*e = MembershipStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for MembershipStatus: %T", src)
+	}
+	return nil
+}
+
+type NullMembershipStatus struct {
+	MembershipStatus MembershipStatus
+	Valid            bool // Valid is true if MembershipStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullMembershipStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.MembershipStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.MembershipStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullMembershipStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.MembershipStatus), nil
+}
+
 type StreamStatus string
 
 const (
@@ -53,6 +139,16 @@ func (ns NullStreamStatus) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.StreamStatus), nil
+}
+
+type EventMember struct {
+	ID        uuid.UUID
+	EventID   uuid.UUID
+	UserID    uuid.UUID
+	TicketID  uuid.UUID
+	Status    MembershipStatus
+	CreatedAt pgtype.Timestamptz
+	RevokedAt pgtype.Timestamptz
 }
 
 type EventStream struct {

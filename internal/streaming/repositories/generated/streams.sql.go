@@ -48,6 +48,68 @@ func (q *Queries) CreateEventStream(ctx context.Context, arg CreateEventStreamPa
 	return i, err
 }
 
+const getActiveMember = `-- name: GetActiveMember :one
+SELECT id, event_id, user_id, ticket_id, status, created_at, revoked_at
+FROM event_members
+WHERE event_id = $1 AND user_id = $2 AND status = 'active'
+`
+
+type GetActiveMemberParams struct {
+	EventID uuid.UUID
+	UserID  uuid.UUID
+}
+
+func (q *Queries) GetActiveMember(ctx context.Context, arg GetActiveMemberParams) (EventMember, error) {
+	row := q.db.QueryRow(ctx, getActiveMember, arg.EventID, arg.UserID)
+	var i EventMember
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.TicketID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const getEventForStream = `-- name: GetEventForStream :one
+SELECT id, host_id, status, amount_minor, duration_seconds, total_tickets,
+       available_tickets, starts_at, ends_at
+FROM events
+WHERE id = $1
+`
+
+type GetEventForStreamRow struct {
+	ID               uuid.UUID
+	HostID           uuid.UUID
+	Status           EventStatus
+	AmountMinor      int64
+	DurationSeconds  int32
+	TotalTickets     int32
+	AvailableTickets int32
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+}
+
+func (q *Queries) GetEventForStream(ctx context.Context, id uuid.UUID) (GetEventForStreamRow, error) {
+	row := q.db.QueryRow(ctx, getEventForStream, id)
+	var i GetEventForStreamRow
+	err := row.Scan(
+		&i.ID,
+		&i.HostID,
+		&i.Status,
+		&i.AmountMinor,
+		&i.DurationSeconds,
+		&i.TotalTickets,
+		&i.AvailableTickets,
+		&i.StartsAt,
+		&i.EndsAt,
+	)
+	return i, err
+}
+
 const getEventStreamByEvent = `-- name: GetEventStreamByEvent :one
 SELECT id, event_id, livekit_room_id, viewer_count, status,
        started_at, finished_at, failed_at, failure_reason
@@ -68,6 +130,84 @@ func (q *Queries) GetEventStreamByEvent(ctx context.Context, eventID uuid.UUID) 
 		&i.FinishedAt,
 		&i.FailedAt,
 		&i.FailureReason,
+	)
+	return i, err
+}
+
+const markEventEnded = `-- name: MarkEventEnded :one
+UPDATE events
+SET status = 'ended',
+    updated_at = now()
+WHERE id = $1
+  AND status = 'live'
+RETURNING id, host_id, status, amount_minor, duration_seconds, total_tickets,
+          available_tickets, starts_at, ends_at
+`
+
+type MarkEventEndedRow struct {
+	ID               uuid.UUID
+	HostID           uuid.UUID
+	Status           EventStatus
+	AmountMinor      int64
+	DurationSeconds  int32
+	TotalTickets     int32
+	AvailableTickets int32
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+}
+
+func (q *Queries) MarkEventEnded(ctx context.Context, id uuid.UUID) (MarkEventEndedRow, error) {
+	row := q.db.QueryRow(ctx, markEventEnded, id)
+	var i MarkEventEndedRow
+	err := row.Scan(
+		&i.ID,
+		&i.HostID,
+		&i.Status,
+		&i.AmountMinor,
+		&i.DurationSeconds,
+		&i.TotalTickets,
+		&i.AvailableTickets,
+		&i.StartsAt,
+		&i.EndsAt,
+	)
+	return i, err
+}
+
+const markEventLive = `-- name: MarkEventLive :one
+UPDATE events
+SET status = 'live',
+    updated_at = now()
+WHERE id = $1
+  AND status = 'upcoming'
+RETURNING id, host_id, status, amount_minor, duration_seconds, total_tickets,
+          available_tickets, starts_at, ends_at
+`
+
+type MarkEventLiveRow struct {
+	ID               uuid.UUID
+	HostID           uuid.UUID
+	Status           EventStatus
+	AmountMinor      int64
+	DurationSeconds  int32
+	TotalTickets     int32
+	AvailableTickets int32
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+}
+
+func (q *Queries) MarkEventLive(ctx context.Context, id uuid.UUID) (MarkEventLiveRow, error) {
+	row := q.db.QueryRow(ctx, markEventLive, id)
+	var i MarkEventLiveRow
+	err := row.Scan(
+		&i.ID,
+		&i.HostID,
+		&i.Status,
+		&i.AmountMinor,
+		&i.DurationSeconds,
+		&i.TotalTickets,
+		&i.AvailableTickets,
+		&i.StartsAt,
+		&i.EndsAt,
 	)
 	return i, err
 }

@@ -36,3 +36,32 @@ VALUES ($1, $2, $3, $4)
 ON CONFLICT (stream_id, event_member_id)
 DO UPDATE SET left_at = NULL
 RETURNING id, stream_id, event_member_id, joined_at, left_at;
+
+-- name: GetEventForStream :one
+SELECT id, host_id, status, amount_minor, duration_seconds, total_tickets,
+       available_tickets, starts_at, ends_at
+FROM events
+WHERE id = $1;
+
+-- name: MarkEventLive :one
+UPDATE events
+SET status = 'live',
+    updated_at = now()
+WHERE id = $1
+  AND status = 'upcoming'
+RETURNING id, host_id, status, amount_minor, duration_seconds, total_tickets,
+          available_tickets, starts_at, ends_at;
+
+-- name: MarkEventEnded :one
+UPDATE events
+SET status = 'ended',
+    updated_at = now()
+WHERE id = $1
+  AND status = 'live'
+RETURNING id, host_id, status, amount_minor, duration_seconds, total_tickets,
+          available_tickets, starts_at, ends_at;
+
+-- name: GetActiveMember :one
+SELECT id, event_id, user_id, ticket_id, status, created_at, revoked_at
+FROM event_members
+WHERE event_id = $1 AND user_id = $2 AND status = 'active';

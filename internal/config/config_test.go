@@ -17,9 +17,10 @@ func validConfig() Config {
 			Name:           "livdot",
 			MaxConnections: 20,
 		},
-		Redis:   Redis{Address: "localhost:6379"},
-		Session: Session{Lifetime: time.Hour, CacheTTL: time.Minute},
-		Payment: Payment{Secret: "test-secret", BaseURL: "https://mock.paystack.local"},
+		Redis:     Redis{Address: "localhost:6379"},
+		Session:   Session{Lifetime: time.Hour, CacheTTL: time.Minute},
+		Payment:   Payment{Secret: "test-secret", BaseURL: "https://mock.paystack.local"},
+		Streaming: Streaming{BaseURL: "https://mock.livekit.local"},
 	}
 }
 

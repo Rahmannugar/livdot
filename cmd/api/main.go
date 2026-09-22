@@ -23,6 +23,9 @@ import (
 	"github.com/Rahmannugar/livdot/internal/infra/cache"
 	"github.com/Rahmannugar/livdot/internal/infra/database"
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
+	streamprovider "github.com/Rahmannugar/livdot/internal/infra/streaming"
+	"github.com/Rahmannugar/livdot/internal/streaming"
+	streamingrepo "github.com/Rahmannugar/livdot/internal/streaming/repositories"
 	"github.com/Rahmannugar/livdot/internal/ticketing"
 	ticketingrepo "github.com/Rahmannugar/livdot/internal/ticketing/repositories"
 	"github.com/Rahmannugar/livdot/internal/webhooks"
@@ -135,6 +138,19 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("configure webhooks: %w", err)
 	}
 
+	streamProvider, err := streamprovider.NewMock(cfg.Streaming.BaseURL)
+	if err != nil {
+		return fmt.Errorf("configure streaming provider: %w", err)
+	}
+	streamService, err := streaming.NewService(
+		streamingrepo.NewStreamStore(databasePool),
+		streamProvider,
+		financeService,
+	)
+	if err != nil {
+		return fmt.Errorf("configure streaming: %w", err)
+	}
+
 	// public browse stays open; mutations resolve the session first so
 	// RequireRole can check the identity.
 	public := router.Group("/api")
@@ -143,6 +159,8 @@ func run(logger *slog.Logger) error {
 	crews.RegisterRoutes(public, authenticated, crewService)
 	events.RegisterRoutes(public, authenticated, eventService)
 	ticketing.RegisterRoutes(authenticated, ticketingService)
+	streaming.RegisterRoutes(authenticated, streamService)
+	finance.RegisterRoutes(authenticated, financeService)
 	webhooks.RegisterRoutes(public, webhookService)
 	if cfg.Environment != config.EnvironmentProduction {
 		webhooks.RegisterDevSimulator(public, paymentProvider, webhookService)

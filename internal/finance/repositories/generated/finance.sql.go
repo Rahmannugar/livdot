@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const claimPendingPayouts = `-- name: ClaimPendingPayouts :many
@@ -237,6 +238,328 @@ func (q *Queries) CreateEventRefund(ctx context.Context, arg CreateEventRefundPa
 	return i, err
 }
 
+const createLedgerEntry = `-- name: CreateLedgerEntry :one
+INSERT INTO ledger_entries (id, event_id, entry_type, amount_minor, purchase_id, refund_id, payout_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT DO NOTHING
+RETURNING id, event_id, entry_type, amount_minor, purchase_id, refund_id, payout_id, created_at
+`
+
+type CreateLedgerEntryParams struct {
+	ID          uuid.UUID
+	EventID     uuid.UUID
+	EntryType   LedgerEntryType
+	AmountMinor int64
+	PurchaseID  pgtype.UUID
+	RefundID    pgtype.UUID
+	PayoutID    pgtype.UUID
+}
+
+func (q *Queries) CreateLedgerEntry(ctx context.Context, arg CreateLedgerEntryParams) (LedgerEntry, error) {
+	row := q.db.QueryRow(ctx, createLedgerEntry,
+		arg.ID,
+		arg.EventID,
+		arg.EntryType,
+		arg.AmountMinor,
+		arg.PurchaseID,
+		arg.RefundID,
+		arg.PayoutID,
+	)
+	var i LedgerEntry
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.EntryType,
+		&i.AmountMinor,
+		&i.PurchaseID,
+		&i.RefundID,
+		&i.PayoutID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getEventForFinance = `-- name: GetEventForFinance :one
+SELECT id, host_id, status, amount_minor, duration_seconds, total_tickets,
+       available_tickets, starts_at, ends_at
+FROM events
+WHERE id = $1
+`
+
+type GetEventForFinanceRow struct {
+	ID               uuid.UUID
+	HostID           uuid.UUID
+	Status           EventStatus
+	AmountMinor      int64
+	DurationSeconds  int32
+	TotalTickets     int32
+	AvailableTickets int32
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+}
+
+func (q *Queries) GetEventForFinance(ctx context.Context, id uuid.UUID) (GetEventForFinanceRow, error) {
+	row := q.db.QueryRow(ctx, getEventForFinance, id)
+	var i GetEventForFinanceRow
+	err := row.Scan(
+		&i.ID,
+		&i.HostID,
+		&i.Status,
+		&i.AmountMinor,
+		&i.DurationSeconds,
+		&i.TotalTickets,
+		&i.AvailableTickets,
+		&i.StartsAt,
+		&i.EndsAt,
+	)
+	return i, err
+}
+
+const getEventStreamStatus = `-- name: GetEventStreamStatus :one
+SELECT status
+FROM event_streams
+WHERE event_id = $1
+`
+
+func (q *Queries) GetEventStreamStatus(ctx context.Context, eventID uuid.UUID) (StreamStatus, error) {
+	row := q.db.QueryRow(ctx, getEventStreamStatus, eventID)
+	var status StreamStatus
+	err := row.Scan(&status)
+	return status, err
+}
+
+const getPayoutByID = `-- name: GetPayoutByID :one
+SELECT id, event_id, host_id, amount_minor, status, provider, provider_payout_id,
+       linked_payout_id, idempotency_key, attempt_count, next_attempt_at, locked_at,
+       last_error, processed_at, retried_at, paid_at
+FROM event_payouts
+WHERE id = $1
+`
+
+func (q *Queries) GetPayoutByID(ctx context.Context, id uuid.UUID) (EventPayout, error) {
+	row := q.db.QueryRow(ctx, getPayoutByID, id)
+	var i EventPayout
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.HostID,
+		&i.AmountMinor,
+		&i.Status,
+		&i.Provider,
+		&i.ProviderPayoutID,
+		&i.LinkedPayoutID,
+		&i.IdempotencyKey,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LockedAt,
+		&i.LastError,
+		&i.ProcessedAt,
+		&i.RetriedAt,
+		&i.PaidAt,
+	)
+	return i, err
+}
+
+const getRefundByID = `-- name: GetRefundByID :one
+SELECT id, event_id, user_id, purchase_id, amount_minor, status, provider,
+       provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
+       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at
+FROM event_refunds
+WHERE id = $1
+`
+
+func (q *Queries) GetRefundByID(ctx context.Context, id uuid.UUID) (EventRefund, error) {
+	row := q.db.QueryRow(ctx, getRefundByID, id)
+	var i EventRefund
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.PurchaseID,
+		&i.AmountMinor,
+		&i.Status,
+		&i.Provider,
+		&i.ProviderRefundID,
+		&i.LinkedRefundID,
+		&i.IdempotencyKey,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LockedAt,
+		&i.LastError,
+		&i.ProcessedAt,
+		&i.RetriedAt,
+		&i.RefundedAt,
+	)
+	return i, err
+}
+
+const listPaidPurchasesForEvent = `-- name: ListPaidPurchasesForEvent :many
+SELECT id, event_id, user_id, amount_minor, provider, provider_payment_id
+FROM event_purchases
+WHERE event_id = $1
+  AND status = 'paid'
+ORDER BY id
+`
+
+type ListPaidPurchasesForEventRow struct {
+	ID                uuid.UUID
+	EventID           uuid.UUID
+	UserID            uuid.UUID
+	AmountMinor       int64
+	Provider          string
+	ProviderPaymentID *string
+}
+
+func (q *Queries) ListPaidPurchasesForEvent(ctx context.Context, eventID uuid.UUID) ([]ListPaidPurchasesForEventRow, error) {
+	rows, err := q.db.Query(ctx, listPaidPurchasesForEvent, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPaidPurchasesForEventRow
+	for rows.Next() {
+		var i ListPaidPurchasesForEventRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.UserID,
+			&i.AmountMinor,
+			&i.Provider,
+			&i.ProviderPaymentID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPayouts = `-- name: ListPayouts :many
+SELECT id, event_id, host_id, amount_minor, status, provider, provider_payout_id,
+       linked_payout_id, idempotency_key, attempt_count, next_attempt_at, locked_at,
+       last_error, processed_at, retried_at, paid_at
+FROM event_payouts
+WHERE ($1::uuid IS NULL OR event_id = $1::uuid)
+  AND ($2::uuid IS NULL OR host_id = $2::uuid)
+  AND ($3::uuid IS NULL OR id > $3::uuid)
+ORDER BY id ASC
+LIMIT $4
+`
+
+type ListPayoutsParams struct {
+	EventID  pgtype.UUID
+	HostID   pgtype.UUID
+	Cursor   pgtype.UUID
+	PageSize int32
+}
+
+func (q *Queries) ListPayouts(ctx context.Context, arg ListPayoutsParams) ([]EventPayout, error) {
+	rows, err := q.db.Query(ctx, listPayouts,
+		arg.EventID,
+		arg.HostID,
+		arg.Cursor,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []EventPayout
+	for rows.Next() {
+		var i EventPayout
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.HostID,
+			&i.AmountMinor,
+			&i.Status,
+			&i.Provider,
+			&i.ProviderPayoutID,
+			&i.LinkedPayoutID,
+			&i.IdempotencyKey,
+			&i.AttemptCount,
+			&i.NextAttemptAt,
+			&i.LockedAt,
+			&i.LastError,
+			&i.ProcessedAt,
+			&i.RetriedAt,
+			&i.PaidAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRefunds = `-- name: ListRefunds :many
+SELECT id, event_id, user_id, purchase_id, amount_minor, status, provider,
+       provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
+       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at
+FROM event_refunds
+WHERE ($1::uuid IS NULL OR event_id = $1::uuid)
+  AND ($2::uuid IS NULL OR user_id = $2::uuid)
+  AND ($3::uuid IS NULL OR id > $3::uuid)
+ORDER BY id ASC
+LIMIT $4
+`
+
+type ListRefundsParams struct {
+	EventID  pgtype.UUID
+	UserID   pgtype.UUID
+	Cursor   pgtype.UUID
+	PageSize int32
+}
+
+func (q *Queries) ListRefunds(ctx context.Context, arg ListRefundsParams) ([]EventRefund, error) {
+	rows, err := q.db.Query(ctx, listRefunds,
+		arg.EventID,
+		arg.UserID,
+		arg.Cursor,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []EventRefund
+	for rows.Next() {
+		var i EventRefund
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.UserID,
+			&i.PurchaseID,
+			&i.AmountMinor,
+			&i.Status,
+			&i.Provider,
+			&i.ProviderRefundID,
+			&i.LinkedRefundID,
+			&i.IdempotencyKey,
+			&i.AttemptCount,
+			&i.NextAttemptAt,
+			&i.LockedAt,
+			&i.LastError,
+			&i.ProcessedAt,
+			&i.RetriedAt,
+			&i.RefundedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markPayoutPaid = `-- name: MarkPayoutPaid :one
 UPDATE event_payouts
 SET status = 'paid',
@@ -276,6 +599,43 @@ func (q *Queries) MarkPayoutPaid(ctx context.Context, arg MarkPayoutPaidParams) 
 		&i.ProcessedAt,
 		&i.RetriedAt,
 		&i.PaidAt,
+	)
+	return i, err
+}
+
+const markPurchaseRefunded = `-- name: MarkPurchaseRefunded :one
+UPDATE event_purchases
+SET status = 'refunded',
+    refunded_at = COALESCE(refunded_at, now()),
+    updated_at = now()
+WHERE id = $1
+  AND status = 'paid'
+RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+          idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+          last_error, created_at, updated_at, paid_at, refunded_at
+`
+
+func (q *Queries) MarkPurchaseRefunded(ctx context.Context, id uuid.UUID) (EventPurchase, error) {
+	row := q.db.QueryRow(ctx, markPurchaseRefunded, id)
+	var i EventPurchase
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.AmountMinor,
+		&i.Status,
+		&i.Provider,
+		&i.ProviderPaymentID,
+		&i.IdempotencyKey,
+		&i.CheckoutUrl,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LockedAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PaidAt,
+		&i.RefundedAt,
 	)
 	return i, err
 }
@@ -322,4 +682,30 @@ func (q *Queries) MarkRefunded(ctx context.Context, arg MarkRefundedParams) (Eve
 		&i.RefundedAt,
 	)
 	return i, err
+}
+
+const sumPaidPurchases = `-- name: SumPaidPurchases :one
+SELECT COALESCE(SUM(amount_minor), 0)::bigint AS amount_minor
+FROM event_purchases
+WHERE event_id = $1 AND status = 'paid'
+`
+
+func (q *Queries) SumPaidPurchases(ctx context.Context, eventID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumPaidPurchases, eventID)
+	var amount_minor int64
+	err := row.Scan(&amount_minor)
+	return amount_minor, err
+}
+
+const sumRefundedPurchases = `-- name: SumRefundedPurchases :one
+SELECT COALESCE(SUM(amount_minor), 0)::bigint AS amount_minor
+FROM event_refunds
+WHERE event_id = $1 AND status = 'refunded'
+`
+
+func (q *Queries) SumRefundedPurchases(ctx context.Context, eventID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumRefundedPurchases, eventID)
+	var amount_minor int64
+	err := row.Scan(&amount_minor)
+	return amount_minor, err
 }
