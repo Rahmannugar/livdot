@@ -28,7 +28,7 @@ idempotent and returns `204`.
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| GET | `/api/account/crews` | crew | Read the caller's crew profile |
+| GET | `/api/account/crews` | crew | Read the crew profile |
 | PATCH | `/api/account/crews` | crew | Update name, list, or availability |
 | GET | `/api/crews` | host | Browse crews with `name` and `availability` filters and keyset pagination |
 
@@ -46,7 +46,7 @@ idempotent and returns `204`.
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
 | POST | `/api/events/{id}/purchase` | user | Reserve a ticket and start a payment; body carries `idempotencyKey` |
-| GET | `/api/tickets/{id}` | user | Read a ticket the caller owns |
+| GET | `/api/tickets/{id}` | user | Read a ticket |
 
 Purchases are one per user per event. A reservation holds a slot for ten
 minutes; the response exposes `ticketId` and `checkoutUrl`.
@@ -74,7 +74,7 @@ automatically; a later failure is left for admin review.
 | GET | `/api/payouts/{id}` | host, internal_admin | Read one payout |
 
 `GET /api/refunds?userId=` and `GET /api/payouts?hostId=` are honored only for
-internal admins, so a caller cannot read another account's money records.
+internal admins, so an account cannot read another account's money records.
 
 ## Webhooks
 

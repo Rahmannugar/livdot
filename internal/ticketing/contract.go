@@ -49,7 +49,7 @@ func RegisterContract(registry *openapi.Registry) {
 	})
 	registry.Add(openapi.Operation{
 		Method: "get", Path: "/api/tickets/{id}", OperationID: "getTicket",
-		Summary: "Get a ticket the caller owns", Tag: "ticketing",
+		Summary: "Get a ticket", Tag: "ticketing",
 		Security: true, Roles: []string{"user"},
 		Responses: map[string]any{
 			"200": openapi.Ref("Ticket"), "401": openapi.Ref("Error"),

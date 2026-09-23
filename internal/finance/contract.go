@@ -70,7 +70,7 @@ func RegisterContract(registry *openapi.Registry) {
 	})
 	registry.Add(openapi.Operation{
 		Method: "get", Path: "/api/refunds", OperationID: "listRefunds",
-		Summary: "List refunds the caller may see", Tag: "finance",
+		Summary: "List refunds", Tag: "finance",
 		Security: true, Roles: []string{"user", "internal_admin"},
 		Responses: map[string]any{
 			"200": openapi.Ref("RefundPage"), "400": openapi.Ref("Error"),
@@ -88,7 +88,7 @@ func RegisterContract(registry *openapi.Registry) {
 	})
 	registry.Add(openapi.Operation{
 		Method: "get", Path: "/api/payouts", OperationID: "listPayouts",
-		Summary: "List payouts the caller may see", Tag: "finance",
+		Summary: "List payouts", Tag: "finance",
 		Security: true, Roles: []string{"host", "internal_admin"},
 		Responses: map[string]any{
 			"200": openapi.Ref("PayoutPage"), "400": openapi.Ref("Error"),

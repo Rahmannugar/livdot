@@ -45,12 +45,12 @@ func RegisterContract(registry *openapi.Registry) {
 	}
 	registry.Add(openapi.Operation{
 		Method: "get", Path: "/api/account/crews", OperationID: "getCrewProfile",
-		Summary: "Read the caller's crew profile", Tag: "crews",
+		Summary: "Read the crew profile", Tag: "crews",
 		Security: true, Roles: []string{"crew"}, Responses: profile,
 	})
 	registry.Add(openapi.Operation{
 		Method: "patch", Path: "/api/account/crews", OperationID: "updateCrewProfile",
-		Summary: "Update the caller's crew profile", Tag: "crews",
+		Summary: "Update the crew profile", Tag: "crews",
 		Security: true, Roles: []string{"crew"},
 		Request: updateProfileRequest{}, RequestName: "UpdateCrewProfileRequest",
 		Responses: profile,

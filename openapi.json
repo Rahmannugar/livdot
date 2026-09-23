@@ -839,7 +839,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Read the caller's crew profile",
+        "summary": "Read the crew profile",
         "tags": [
           "crews"
         ],
@@ -926,7 +926,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Update the caller's crew profile",
+        "summary": "Update the crew profile",
         "tags": [
           "crews"
         ],
@@ -2013,7 +2013,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "List payouts the caller may see",
+        "summary": "List payouts",
         "tags": [
           "finance"
         ],
@@ -2163,7 +2163,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "List refunds the caller may see",
+        "summary": "List refunds",
         "tags": [
           "finance"
         ],
@@ -2789,7 +2789,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Get a ticket the caller owns",
+        "summary": "Get a ticket",
         "tags": [
           "ticketing"
         ],
