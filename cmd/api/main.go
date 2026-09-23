@@ -95,6 +95,14 @@ func run(logger *slog.Logger) error {
 	router.Use(gin.Recovery())
 	health.RegisterRoutes(router, databasePool, redisClient)
 	registerDocs(router)
+	router.GET("/", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusOK, gin.H{
+			"service": "livdot",
+			"docs":    "/api/docs",
+			"openapi": "/api/openapi.json",
+			"health":  "/health/ready",
+		})
+	})
 
 	limiter, err := ratelimit.New(redisClient, "livdot:ratelimit", accountSubject)
 	if err != nil {

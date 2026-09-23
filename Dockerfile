@@ -14,6 +14,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/livdot-migrate ./cmd/migrate
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/livdot-admin ./cmd/admin
 
 FROM alpine:3.22
 
@@ -23,6 +26,7 @@ COPY --from=build /src/internal/infra/database/migrations /migrations
 COPY --from=build /out/livdot-api /usr/local/bin/livdot-api
 COPY --from=build /out/livdot-worker /usr/local/bin/livdot-worker
 COPY --from=build /out/livdot-migrate /usr/local/bin/livdot-migrate
+COPY --from=build /out/livdot-admin /usr/local/bin/livdot-admin
 
 EXPOSE 8080
 

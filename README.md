@@ -57,7 +57,7 @@ task run-worker
 Internal admins are created through a command, not an endpoint:
 
 ```bash
-task admin-create -- -email admin@livdot.local -password password123 -full-name Admin -role admin
+task admin-create -- -email admin@livdot.local -password 'password123' -full-name Admin -role admin
 ```
 
 Stop the stack:

@@ -87,7 +87,7 @@ internal admins, so a caller cannot read another account's money records.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/health/live` | Liveness |
-| GET | `/health/ready` | Readiness, including PostgreSQL and Redis |
+| GET | `/health/ready` | Readiness with per-dependency status (`postgres`, `redis`) |
 | GET | `/api/openapi.json` | OpenAPI document |
 | GET | `/api/docs` | Scalar API reference |
 

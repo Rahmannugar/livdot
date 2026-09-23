@@ -20,20 +20,34 @@ func RegisterRoutes(router gin.IRoutes, database *pgxpool.Pool, cache *redis.Cli
 		checkContext, cancel := context.WithTimeout(ctx.Request.Context(), dependencyCheckTimeout)
 		defer cancel()
 
-		if err := database.Ping(checkContext); err != nil {
-			ctx.JSON(http.StatusServiceUnavailable, gin.H{
-				"status":     "unavailable",
-				"dependency": "postgres",
-			})
-			return
+		// check every dependency so the response shows which one is unhealthy.
+		dependencies := map[string]string{
+			"postgres": checkPostgres(checkContext, database),
+			"redis":    checkRedis(checkContext, cache),
 		}
-		if err := cache.Ping(checkContext).Err(); err != nil {
-			ctx.JSON(http.StatusServiceUnavailable, gin.H{
-				"status":     "unavailable",
-				"dependency": "redis",
-			})
-			return
+		status := http.StatusOK
+		state := "ready"
+		for _, result := range dependencies {
+			if result != "ok" {
+				status = http.StatusServiceUnavailable
+				state = "unavailable"
+				break
+			}
 		}
-		ctx.JSON(http.StatusOK, gin.H{"status": "ready"})
+		ctx.JSON(status, gin.H{"status": state, "dependencies": dependencies})
 	})
+}
+
+func checkPostgres(ctx context.Context, database *pgxpool.Pool) string {
+	if err := database.Ping(ctx); err != nil {
+		return "unavailable"
+	}
+	return "ok"
+}
+
+func checkRedis(ctx context.Context, cache *redis.Client) string {
+	if err := cache.Ping(ctx).Err(); err != nil {
+		return "unavailable"
+	}
+	return "ok"
 }

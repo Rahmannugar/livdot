@@ -3138,6 +3138,12 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "dependencies": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
                     "status": {
                       "type": "string"
                     }
@@ -3153,6 +3159,12 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "dependencies": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
                     "status": {
                       "type": "string"
                     }
@@ -3164,7 +3176,7 @@
             "description": "error"
           }
         },
-        "summary": "Readiness probe",
+        "summary": "Readiness probe with per-dependency status",
         "tags": [
           "health"
         ]

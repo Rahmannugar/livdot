@@ -17,7 +17,7 @@ tasks:
   admin-create:
     desc: Create an internal admin; pass -email -password -full-name -role
     cmds:
-      - go run ./cmd/admin {{.CLI_ARGS}}
+      - docker compose run --rm admin {{.CLI_ARGS}}
 
   build:
     desc: Build all Go commands
@@ -67,16 +67,19 @@ tasks:
       - go build ./...
 
   up:
-    desc: Start the local stack without forcing an image rebuild
+    desc: Start the local stack, applying migrations first
+    aliases: [compose-up]
     cmds:
+      - docker compose run --rm migrate
       - docker compose up -d
-      - docker compose rm -f migrate
 
   up-build:
-    desc: Build images and start the local stack
+    desc: Build images, apply migrations, and start the local stack
+    aliases: [compose-up-build]
     cmds:
-      - docker compose up --build -d
-      - docker compose rm -f migrate
+      - docker compose build
+      - docker compose run --rm migrate
+      - docker compose up -d
 
   down:
     desc: Stop the local stack
