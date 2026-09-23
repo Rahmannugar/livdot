@@ -8,6 +8,7 @@ import (
 	"github.com/Rahmannugar/livdot/internal/infra/httpapi"
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
+	"github.com/Rahmannugar/livdot/internal/ticketing"
 	"github.com/gin-gonic/gin"
 )
 
@@ -55,6 +56,10 @@ func writeWebhookError(ctx *gin.Context, err error) {
 		status = http.StatusBadRequest
 		code = "invalid_webhook"
 		message = "the webhook payload is invalid"
+	case errors.Is(err, ticketing.ErrNotFound):
+		status = http.StatusNotFound
+		code = "not_found"
+		message = "no purchase exists for this identifier"
 	}
 	httpapi.WriteError(ctx, err, status, code, message, "")
 }

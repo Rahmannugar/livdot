@@ -55,6 +55,14 @@ func RequestLogger(logger *slog.Logger) gin.HandlerFunc {
 				return
 			}
 		}
+		// failed probes have no private error, so promote them to ERROR so an
+		// unhealthy dependency is not buried under INFO-level request logs.
+		failedProbe := false
+		if internalError == nil && status >= 400 {
+			if _, probe := probeRoutes[route]; probe {
+				failedProbe = true
+			}
+		}
 		attributes := []any{
 			"request_id", requestID,
 			"method", ctx.Request.Method,
@@ -65,6 +73,10 @@ func RequestLogger(logger *slog.Logger) gin.HandlerFunc {
 		if internalError != nil {
 			attributes = append(attributes, "error", internalError.Err)
 			logger.Error("http request completed", attributes...)
+			return
+		}
+		if failedProbe {
+			logger.Error("health probe failed", attributes...)
 			return
 		}
 		logger.Info("http request completed", attributes...)
