@@ -35,6 +35,7 @@ func RegisterContract(registry *openapi.Registry) {
 			"cancelledAt":      map[string]any{"type": "string", "format": "date-time", "nullable": true, "example": nil},
 			"createdAt":        map[string]any{"type": "string", "format": "date-time", "example": "2026-09-23T17:50:00Z"},
 			"updatedAt":        map[string]any{"type": "string", "format": "date-time", "example": "2026-09-23T17:50:00Z"},
+			"paid":             map[string]any{"type": "boolean", "description": "Whether the requesting account holds paid access", "example": false},
 		},
 	})
 	registry.Component("EventPage", map[string]any{
@@ -58,11 +59,13 @@ func RegisterContract(registry *openapi.Registry) {
 	}
 	registry.Add(openapi.Operation{
 		Method: "get", Path: "/api/events", OperationID: "listEvents",
-		Summary: "List events with filters", Tag: "events", Responses: list,
+		Summary: "List events with filters", Tag: "events",
+		Security: true, Responses: list,
 	})
 	registry.Add(openapi.Operation{
 		Method: "get", Path: "/api/events/{id}", OperationID: "getEvent",
-		Summary: "Get an event and its details", Tag: "events", Responses: list,
+		Summary: "Get an event and its details", Tag: "events",
+		Security: true, Responses: list,
 	})
 	registry.Add(openapi.Operation{
 		Method: "post", Path: "/api/events", OperationID: "createEvent",

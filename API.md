@@ -19,7 +19,7 @@ document defines the exact schemas.
 | POST | `/api/signup/user` | public | Register a viewer |
 | POST | `/api/signin/user` | public | Sign in a viewer |
 | POST | `/api/signin/internal` | public | Sign in an internal admin |
-| POST | `/api/signout` | authenticated | Revoke the presented session token |
+| POST | `/api/signout` |  | Revoke the presented session token |
 
 Sign-up and sign-in return `{ accountId, email, token, expiresAt }`. Sign-out is
 idempotent and returns `204`.
@@ -36,8 +36,8 @@ idempotent and returns `204`.
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| GET | `/api/events` | public | List events with `name`, `status`, `duration[gte|lte]`, `amount[gte|lte]`, `cursor`, `pageSize` |
-| GET | `/api/events/{id}` | public | Event detail |
+| GET | `/api/events` |  | List events with `name`, `status`, `duration[gte|lte]`, `amount[gte|lte]`, `cursor`, `pageSize` |
+| GET | `/api/events/{id}` |  | Event detail; `paid` reflects the caller's own access |
 | POST | `/api/events` | host | Create an event, optionally assigning a crew |
 | PATCH | `/api/events/{id}` | host | Update an event, reassign the crew, or cancel with `status=cancelled` |
 

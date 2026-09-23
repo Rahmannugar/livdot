@@ -117,6 +117,19 @@ type RefundablePurchase struct {
 	ProviderPaymentID string
 }
 
+// withTicket fills the checkout fields a stored purchase row does not carry, so
+// a replayed purchase matches the shape of a fresh one.
+func (service *Service) withTicket(ctx context.Context, purchase Purchase) Purchase {
+	ticket, err := service.store.TicketByPurchase(ctx, purchase.ID)
+	if err != nil {
+		return purchase
+	}
+	purchase.TicketID = ticket.ID
+	expiresAt := ticket.ReservationExpiresAt
+	purchase.CheckoutExpiresAt = &expiresAt
+	return purchase
+}
+
 // finance implements this so ticketing can hand off late payments.
 type Refunder interface {
 	RefundExpiredPurchase(ctx context.Context, purchase RefundablePurchase) error
@@ -139,7 +152,9 @@ type Store interface {
 	SettlePaid(ctx context.Context, input SettleInput) (SettleResult, error)
 	FailAndRelease(ctx context.Context, purchaseID string) (Purchase, error)
 	TicketByID(ctx context.Context, id string) (Ticket, error)
+	TicketByPurchase(ctx context.Context, purchaseID string) (Ticket, error)
 	ExpireReservations(ctx context.Context, limit int32) (int, error)
+	ActiveMembership(ctx context.Context, eventID, userID string) (bool, error)
 }
 
 type Service struct {
@@ -191,7 +206,7 @@ func (service *Service) Purchase(
 
 	// a replayed key returns the existing intent instead of a second charge.
 	if existing, err := service.store.FindPurchaseByIdempotencyKey(ctx, userID, idempotencyKey); err == nil {
-		return existing, nil
+		return service.withTicket(ctx, existing), nil
 	} else if !errors.Is(err, ErrNotFound) {
 		return Purchase{}, err
 	}
@@ -270,6 +285,18 @@ func (service *Service) Ticket(ctx context.Context, userID, ticketID string) (Ti
 		return Ticket{}, ErrForbidden
 	}
 	return ticket, nil
+}
+
+// HasAccess reports whether the account holds active paid access to an event.
+// It satisfies the events domain's Membership port.
+func (service *Service) HasAccess(ctx context.Context, eventID, accountID string) (bool, error) {
+	if _, err := uuid.Parse(eventID); err != nil {
+		return false, nil
+	}
+	if _, err := uuid.Parse(accountID); err != nil {
+		return false, nil
+	}
+	return service.store.ActiveMembership(ctx, eventID, accountID)
 }
 
 // ExpireReservations lapses held tickets and returns their slots to the event.

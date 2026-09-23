@@ -126,11 +126,6 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("configure crews: %w", err)
 	}
 	directory := authrepo.NewAccountDirectory(databasePool)
-	eventService, err := events.NewService(
-		eventsrepo.NewEventStore(databasePool), crewService, directory)
-	if err != nil {
-		return fmt.Errorf("configure events: %w", err)
-	}
 	paymentProvider, err := payment.NewMock(cfg.Payment.Secret, cfg.Payment.BaseURL)
 	if err != nil {
 		return fmt.Errorf("configure payment provider: %w", err)
@@ -148,6 +143,12 @@ func run(logger *slog.Logger) error {
 	)
 	if err != nil {
 		return fmt.Errorf("configure ticketing: %w", err)
+	}
+	// events asks ticketing for paid access, so ticketing is composed first.
+	eventService, err := events.NewService(
+		eventsrepo.NewEventStore(databasePool), crewService, directory, ticketingService)
+	if err != nil {
+		return fmt.Errorf("configure events: %w", err)
 	}
 	webhookService, err := webhooks.NewService(
 		webhooksrepo.NewWebhookStore(databasePool),
@@ -171,13 +172,12 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("configure streaming: %w", err)
 	}
 
-	// public browse stays open; mutations resolve the session first so
-	// RequireRole can check the identity.
-	public := router.Group("/api")
+	// everything except signup and signin resolves the session first.
 	authenticated := router.Group("/api")
 	authenticated.Use(authentication.RequireSession(authService))
-	crews.RegisterRoutes(public, authenticated, crewService, limiter)
-	events.RegisterRoutes(public, authenticated, eventService, limiter)
+	public := router.Group("/api")
+	crews.RegisterRoutes(authenticated, crewService, limiter)
+	events.RegisterRoutes(authenticated, eventService, limiter)
 	ticketing.RegisterRoutes(authenticated, ticketingService, limiter)
 	streaming.RegisterRoutes(authenticated, streamService, limiter)
 	finance.RegisterRoutes(authenticated, financeService, limiter)

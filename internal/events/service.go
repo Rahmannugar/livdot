@@ -145,19 +145,26 @@ type CrewDirectory interface {
 	Exists(ctx context.Context, accountID string) (bool, error)
 }
 
+// reports whether an account holds paid access to an event. The ticketing domain
+// owns entitlement, so events asks it instead of reading its tables.
+type Membership interface {
+	HasAccess(ctx context.Context, eventID, accountID string) (bool, error)
+}
+
 // resolves a recipient email so the crew notice can be queued in-transaction.
 type Directory interface {
 	AccountEmail(ctx context.Context, accountID string) (string, error)
 }
 
 type Service struct {
-	store     Store
-	crews     CrewDirectory
-	directory Directory
-	now       func() time.Time
+	store      Store
+	crews      CrewDirectory
+	directory  Directory
+	membership Membership
+	now        func() time.Time
 }
 
-func NewService(store Store, crews CrewDirectory, directory Directory) (*Service, error) {
+func NewService(store Store, crews CrewDirectory, directory Directory, membership Membership) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("events store is required")
 	}
@@ -167,7 +174,16 @@ func NewService(store Store, crews CrewDirectory, directory Directory) (*Service
 	if directory == nil {
 		return nil, fmt.Errorf("recipient directory is required")
 	}
-	return &Service{store: store, crews: crews, directory: directory, now: time.Now}, nil
+	if membership == nil {
+		return nil, fmt.Errorf("membership resolver is required")
+	}
+	return &Service{
+		store:      store,
+		crews:      crews,
+		directory:  directory,
+		membership: membership,
+		now:        time.Now,
+	}, nil
 }
 
 func (service *Service) Create(ctx context.Context, hostID string, input CreateInput) (Event, error) {
@@ -264,6 +280,11 @@ func (service *Service) List(ctx context.Context, filter Filter) (Page, error) {
 
 func (service *Service) Detail(ctx context.Context, id string) (Event, error) {
 	return service.store.Detail(ctx, id)
+}
+
+// Access reports whether the account holds paid access to the event.
+func (service *Service) Access(ctx context.Context, eventID, accountID string) (bool, error) {
+	return service.membership.HasAccess(ctx, eventID, accountID)
 }
 
 func (service *Service) Update(ctx context.Context, hostID, id string, input UpdateInput) (Event, error) {

@@ -37,8 +37,7 @@ var (
 	}
 )
 
-func RegisterRoutes(public gin.IRoutes, authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
-	_ = public
+func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := &Handler{service: service}
 	read := limiter.Middleware(readPolicy)
 	write := limiter.Middleware(writePolicy)

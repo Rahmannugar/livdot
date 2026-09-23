@@ -313,6 +313,43 @@ func (store *TicketStore) TicketByID(ctx context.Context, id string) (ticketing.
 	return ticketFromRecord(record), nil
 }
 
+func (store *TicketStore) TicketByPurchase(ctx context.Context, purchaseID string) (ticketing.Ticket, error) {
+	id, err := uuid.Parse(purchaseID)
+	if err != nil {
+		return ticketing.Ticket{}, ticketing.ErrNotFound
+	}
+	record, err := ticketingdb.New(store.pool).GetTicketByPurchase(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ticketing.Ticket{}, ticketing.ErrNotFound
+	}
+	if err != nil {
+		return ticketing.Ticket{}, fmt.Errorf("get ticket by purchase: %w", err)
+	}
+	return ticketFromRecord(record), nil
+}
+
+func (store *TicketStore) ActiveMembership(ctx context.Context, eventID, userID string) (bool, error) {
+	event, err := uuid.Parse(eventID)
+	if err != nil {
+		return false, ticketing.ErrInvalidInput
+	}
+	user, err := uuid.Parse(userID)
+	if err != nil {
+		return false, ticketing.ErrInvalidInput
+	}
+	record, err := ticketingdb.New(store.pool).GetEventMemberByUser(ctx, ticketingdb.GetEventMemberByUserParams{
+		EventID: event,
+		UserID:  user,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("get event member: %w", err)
+	}
+	return record.Status == ticketingdb.MembershipStatusActive, nil
+}
+
 // ExpireReservations claims lapsed reservations and returns each held slot to
 // its event in one tx per ticket. FOR UPDATE SKIP LOCKED makes concurrent
 // workers safe.

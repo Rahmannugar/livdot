@@ -20,6 +20,7 @@ type ServiceAPI interface {
 	Create(ctx context.Context, hostID string, input CreateInput) (Event, error)
 	List(ctx context.Context, filter Filter) (Page, error)
 	Detail(ctx context.Context, id string) (Event, error)
+	Access(ctx context.Context, eventID, accountID string) (bool, error)
 	Update(ctx context.Context, hostID, id string, input UpdateInput) (Event, error)
 }
 
@@ -39,12 +40,12 @@ var (
 	}
 )
 
-func RegisterRoutes(public gin.IRoutes, authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
+func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI, limiter *ratelimit.Limiter) {
 	handler := &Handler{service: service}
 	read := limiter.Middleware(readPolicy)
 	write := limiter.Middleware(writePolicy)
-	public.GET("/events", read, handler.list)
-	public.GET("/events/:id", read, handler.detail)
+	authenticated.GET("/events", read, handler.list)
+	authenticated.GET("/events/:id", read, handler.detail)
 	authenticated.POST("/events", authentication.RequireRole(authentication.RoleHost), write, handler.create)
 	authenticated.PATCH("/events/:id", authentication.RequireRole(authentication.RoleHost), write, handler.update)
 }
@@ -90,6 +91,7 @@ type eventResponse struct {
 	CancelledAt      *time.Time    `json:"cancelledAt"`
 	CreatedAt        time.Time     `json:"createdAt"`
 	UpdatedAt        time.Time     `json:"updatedAt"`
+	Paid             bool          `json:"paid"`
 }
 
 func (handler *Handler) create(ctx *gin.Context) {
@@ -143,12 +145,22 @@ func (handler *Handler) list(ctx *gin.Context) {
 }
 
 func (handler *Handler) detail(ctx *gin.Context) {
+	identity, ok := authentication.IdentityFrom(ctx)
+	if !ok {
+		writeEventError(ctx, authentication.ErrUnauthenticated)
+		return
+	}
 	event, err := handler.service.Detail(ctx.Request.Context(), ctx.Param("id"))
 	if err != nil {
 		writeEventError(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, newEventResponse(event))
+	response := newEventResponse(event)
+	// the caller's own paid access, not the event's.
+	if paid, err := handler.service.Access(ctx.Request.Context(), event.ID, identity.AccountID); err == nil {
+		response.Paid = paid
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (handler *Handler) update(ctx *gin.Context) {

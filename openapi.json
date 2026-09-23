@@ -225,6 +225,11 @@
             "example": "Live Show",
             "type": "string"
           },
+          "paid": {
+            "description": "Whether the requesting account holds paid access",
+            "example": false,
+            "type": "boolean"
+          },
           "startsAt": {
             "example": "2026-12-01T18:00:00Z",
             "format": "date-time",
@@ -1184,6 +1189,11 @@
             "description": "rate limited"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "List events with filters",
         "tags": [
           "events"
@@ -1352,6 +1362,11 @@
             "description": "rate limited"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Get an event and its details",
         "tags": [
           "events"
