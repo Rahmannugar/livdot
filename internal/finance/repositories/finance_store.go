@@ -88,6 +88,11 @@ func (store *FinanceStore) SettleRefund(ctx context.Context, refundID, providerR
 	if _, err := queries.MarkPurchaseRefunded(ctx, record.PurchaseID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return finance.Refund{}, fmt.Errorf("mark purchase refunded: %w", err)
 	}
+	// a refunded purchase must lose stream access, and the ticket it held must
+	// stop being a valid entitlement.
+	if _, err := queries.RevokeEntitlementByPurchase(ctx, record.PurchaseID); err != nil {
+		return finance.Refund{}, fmt.Errorf("revoke entitlement: %w", err)
+	}
 	entryID, err := uuid.NewV7()
 	if err != nil {
 		return finance.Refund{}, fmt.Errorf("generate ledger id: %w", err)

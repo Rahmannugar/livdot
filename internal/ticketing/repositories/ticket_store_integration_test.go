@@ -15,10 +15,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// TestTicketReservationAgainstPostgres exercises the reservation transaction
+// TestTicketReservationAgainstDatabase exercises the reservation transaction
 // against a real PostgreSQL. Set LIVDOT_TEST_DATABASE_URL to run it; otherwise
 // it is skipped so unit-only environments stay green.
-func TestTicketReservationAgainstPostgres(t *testing.T) {
+func TestTicketReservationAgainstDatabase(t *testing.T) {
 	dsn := os.Getenv("LIVDOT_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("set LIVDOT_TEST_DATABASE_URL to run the PostgreSQL integration test")

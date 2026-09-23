@@ -90,6 +90,16 @@ type ReserveInput struct {
 	ExpiresAt      time.Time
 }
 
+// what the store writes when a failed attempt is retried for the same event.
+type RetryInput struct {
+	PurchaseID     string
+	EventID        string
+	UserID         string
+	IdempotencyKey string
+	ReservedAt     time.Time
+	ExpiresAt      time.Time
+}
+
 // what the store writes when a paid charge settles. RecipientEmail is resolved
 // before the transaction so the receipt can be queued inside it.
 type SettleInput struct {
@@ -147,6 +157,7 @@ type Store interface {
 	FindPurchaseByEventAndUser(ctx context.Context, eventID, userID string) (Purchase, error)
 	FindPurchaseByID(ctx context.Context, id string) (Purchase, error)
 	Reserve(ctx context.Context, input ReserveInput) (Purchase, Ticket, error)
+	ResetForRetry(ctx context.Context, input RetryInput) (Purchase, error)
 	SetCheckoutURL(ctx context.Context, purchaseID, url string) (Purchase, error)
 	MarkProcessing(ctx context.Context, purchaseID string) (Purchase, error)
 	SettlePaid(ctx context.Context, input SettleInput) (SettleResult, error)
@@ -154,7 +165,7 @@ type Store interface {
 	TicketByID(ctx context.Context, id string) (Ticket, error)
 	TicketByPurchase(ctx context.Context, purchaseID string) (Ticket, error)
 	ExpireReservations(ctx context.Context, limit int32) (int, error)
-	ActiveMembership(ctx context.Context, eventID, userID string) (bool, error)
+	ActiveEventIDs(ctx context.Context, userID string, eventIDs []string) (map[string]bool, error)
 }
 
 type Service struct {
@@ -210,12 +221,6 @@ func (service *Service) Purchase(
 	} else if !errors.Is(err, ErrNotFound) {
 		return Purchase{}, err
 	}
-	// one ticket per user per event.
-	if _, err := service.store.FindPurchaseByEventAndUser(ctx, eventID, userID); err == nil {
-		return Purchase{}, ErrAlreadyPurchased
-	} else if !errors.Is(err, ErrNotFound) {
-		return Purchase{}, err
-	}
 
 	event, err := service.store.EventForReservation(ctx, eventID)
 	if err != nil {
@@ -228,6 +233,48 @@ func (service *Service) Purchase(
 		return Purchase{}, ErrSoldOut
 	}
 
+	purchase, err := service.openPurchase(ctx, event, userID, idempotencyKey)
+	if err != nil {
+		return Purchase{}, err
+	}
+	return service.charge(ctx, purchase, event.AmountMinor, idempotencyKey)
+}
+
+// openPurchase uses the account's single purchase row for the event. It reserves
+// a fresh slot, or resets a prior failed attempt in place. A live reservation or
+// a settled purchase blocks a new one.
+func (service *Service) openPurchase(
+	ctx context.Context,
+	event ReservableEvent,
+	userID, idempotencyKey string,
+) (Purchase, error) {
+	existing, err := service.store.FindPurchaseByEventAndUser(ctx, event.ID, userID)
+	switch {
+	case err == nil:
+		// already-paid access blocks a new purchase; everything else (failed,
+		// refunded, or a lapsed reservation) is reset in place so the buyer can
+		// try again.
+		if existing.Status == PurchasePaid {
+			return Purchase{}, ErrAlreadyPurchased
+		}
+		// a live reservation means the buyer already has a checkout open.
+		if ticket, ticketErr := service.store.TicketByPurchase(ctx, existing.ID); ticketErr == nil &&
+			ticket.Status == TicketReserved && ticket.ReservationExpiresAt.After(service.now()) {
+			return Purchase{}, ErrAlreadyPurchased
+		}
+		now := service.now()
+		return service.store.ResetForRetry(ctx, RetryInput{
+			PurchaseID:     existing.ID,
+			EventID:        event.ID,
+			UserID:         userID,
+			IdempotencyKey: idempotencyKey,
+			ReservedAt:     now,
+			ExpiresAt:      now.Add(reservationWindow),
+		})
+	case !errors.Is(err, ErrNotFound):
+		return Purchase{}, err
+	}
+
 	now := service.now()
 	purchaseID, err := uuid.NewV7()
 	if err != nil {
@@ -237,7 +284,7 @@ func (service *Service) Purchase(
 	if err != nil {
 		return Purchase{}, fmt.Errorf("generate ticket id: %w", err)
 	}
-	purchase, ticket, err := service.store.Reserve(ctx, ReserveInput{
+	purchase, _, err := service.store.Reserve(ctx, ReserveInput{
 		PurchaseID:     purchaseID.String(),
 		TicketID:       ticketID.String(),
 		EventID:        event.ID,
@@ -251,25 +298,34 @@ func (service *Service) Purchase(
 	if err != nil {
 		return Purchase{}, err
 	}
-	purchase.TicketID = ticket.ID
-	// the checkout is only valid while the reservation holds the slot.
-	expiresAt := ticket.ReservationExpiresAt
-	purchase.CheckoutExpiresAt = &expiresAt
+	return purchase, nil
+}
 
+// charge opens the provider charge and stores the checkout URL. A provider
+// refusal releases the held slot.
+func (service *Service) charge(
+	ctx context.Context,
+	purchase Purchase,
+	amountMinor int64,
+	idempotencyKey string,
+) (Purchase, error) {
 	charge, err := service.provider.InitiateCharge(ctx, payment.ChargeRequest{
 		Reference:      purchase.ID,
 		IdempotencyKey: idempotencyKey,
-		AmountMinor:    event.AmountMinor,
+		AmountMinor:    amountMinor,
 		Currency:       payment.Currency,
 	})
 	if err != nil {
-		// provider refused, so drop the hold rather than stranding the slot.
 		if _, releaseErr := service.store.FailAndRelease(ctx, purchase.ID); releaseErr != nil {
 			return Purchase{}, releaseErr
 		}
 		return Purchase{}, fmt.Errorf("initiate charge: %w", err)
 	}
-	return service.store.SetCheckoutURL(ctx, purchase.ID, charge.CheckoutURL)
+	updated, err := service.store.SetCheckoutURL(ctx, purchase.ID, charge.CheckoutURL)
+	if err != nil {
+		return Purchase{}, err
+	}
+	return service.withTicket(ctx, updated), nil
 }
 
 // Ticket returns a ticket the caller owns.
@@ -287,16 +343,13 @@ func (service *Service) Ticket(ctx context.Context, userID, ticketID string) (Ti
 	return ticket, nil
 }
 
-// HasAccess reports whether the account holds active paid access to an event.
-// It satisfies the events domain's Membership port.
-func (service *Service) HasAccess(ctx context.Context, eventID, accountID string) (bool, error) {
-	if _, err := uuid.Parse(eventID); err != nil {
-		return false, nil
+// Accessible reports which of the events the account holds active paid access
+// to. It satisfies the events domain's Membership port.
+func (service *Service) Accessible(ctx context.Context, accountID string, eventIDs []string) (map[string]bool, error) {
+	if _, err := uuid.Parse(accountID); err != nil || len(eventIDs) == 0 {
+		return map[string]bool{}, nil
 	}
-	if _, err := uuid.Parse(accountID); err != nil {
-		return false, nil
-	}
-	return service.store.ActiveMembership(ctx, eventID, accountID)
+	return service.store.ActiveEventIDs(ctx, accountID, eventIDs)
 }
 
 // ExpireReservations lapses held tickets and returns their slots to the event.

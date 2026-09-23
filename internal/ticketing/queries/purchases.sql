@@ -204,3 +204,50 @@ WHERE ticket.id = claim.id
 RETURNING ticket.id, ticket.event_id, ticket.user_id, ticket.purchase_id,
           ticket.status, ticket.reserved_at, ticket.reservation_expires_at,
           ticket.issued_at, ticket.revoked_at;
+
+-- name: ResetPurchaseForRetry :one
+UPDATE event_purchases
+SET idempotency_key = $2,
+    status = 'initiated',
+    checkout_url = NULL,
+    provider_payment_id = NULL,
+    paid_at = NULL,
+    refunded_at = NULL,
+    attempt_count = 0,
+    next_attempt_at = now(),
+    locked_at = NULL,
+    last_error = NULL,
+    updated_at = now()
+WHERE id = $1
+  AND status IN ('failed', 'refunded')
+RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+          idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+          last_error, created_at, updated_at, paid_at, refunded_at;
+
+-- name: ResetTicketForRetry :one
+UPDATE tickets
+SET status = 'temporarily_reserved',
+    reserved_at = $2,
+    reservation_expires_at = $3,
+    issued_at = NULL,
+    revoked_at = NULL
+WHERE id = $1
+RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
+          reservation_expires_at, issued_at, revoked_at;
+
+-- name: MarkPurchaseFailedForTicket :one
+UPDATE event_purchases
+SET status = 'failed',
+    updated_at = now()
+WHERE id = $1
+  AND status IN ('initiated', 'processing')
+RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+          idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+          last_error, created_at, updated_at, paid_at, refunded_at;
+
+-- name: ListActiveMemberships :many
+SELECT event_id
+FROM event_members
+WHERE user_id = $1
+  AND status = 'active'
+  AND event_id = ANY(sqlc.arg('event_ids')::uuid[]);

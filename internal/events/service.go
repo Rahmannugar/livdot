@@ -61,6 +61,7 @@ type Event struct {
 	CancelledAt      *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	Purchased        bool
 }
 
 type Filter struct {
@@ -145,10 +146,10 @@ type CrewDirectory interface {
 	Exists(ctx context.Context, accountID string) (bool, error)
 }
 
-// reports whether an account holds paid access to an event. The ticketing domain
+// reports which events an account holds paid access to. The ticketing domain
 // owns entitlement, so events asks it instead of reading its tables.
 type Membership interface {
-	HasAccess(ctx context.Context, eventID, accountID string) (bool, error)
+	Accessible(ctx context.Context, accountID string, eventIDs []string) (map[string]bool, error)
 }
 
 // resolves a recipient email so the crew notice can be queued in-transaction.
@@ -213,7 +214,7 @@ func (service *Service) Create(ctx context.Context, hostID string, input CreateI
 	}, recipient)
 }
 
-func (service *Service) List(ctx context.Context, filter Filter) (Page, error) {
+func (service *Service) List(ctx context.Context, accountID string, filter Filter) (Page, error) {
 	if filter.Status != nil && !filter.Status.Valid() {
 		return Page{}, validation.New(ErrInvalidInput, "status",
 			"status must be upcoming, live, ended, or cancelled")
@@ -275,16 +276,36 @@ func (service *Service) List(ctx context.Context, filter Filter) (Page, error) {
 		last := page.Events[len(page.Events)-1]
 		page.NextCursor = encodeCursor(Cursor{StartsAt: last.StartsAt, ID: last.ID})
 	}
+	service.attachAccess(ctx, accountID, page.Events)
 	return page, nil
 }
 
-func (service *Service) Detail(ctx context.Context, id string) (Event, error) {
-	return service.store.Detail(ctx, id)
+func (service *Service) Detail(ctx context.Context, accountID, id string) (Event, error) {
+	event, err := service.store.Detail(ctx, id)
+	if err != nil {
+		return Event{}, err
+	}
+	events := []Event{event}
+	service.attachAccess(ctx, accountID, events)
+	return events[0], nil
 }
 
-// Access reports whether the account holds paid access to the event.
-func (service *Service) Access(ctx context.Context, eventID, accountID string) (bool, error) {
-	return service.membership.HasAccess(ctx, eventID, accountID)
+// attachAccess marks each event with whether the account holds paid access.
+func (service *Service) attachAccess(ctx context.Context, accountID string, list []Event) {
+	if accountID == "" || len(list) == 0 {
+		return
+	}
+	eventIDs := make([]string, len(list))
+	for index, event := range list {
+		eventIDs[index] = event.ID
+	}
+	accessible, err := service.membership.Accessible(ctx, accountID, eventIDs)
+	if err != nil {
+		return
+	}
+	for index := range list {
+		list[index].Purchased = accessible[list[index].ID]
+	}
 }
 
 func (service *Service) Update(ctx context.Context, hostID, id string, input UpdateInput) (Event, error) {

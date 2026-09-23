@@ -580,6 +580,39 @@ func (q *Queries) IssueTicketByPurchase(ctx context.Context, purchaseID uuid.UUI
 	return i, err
 }
 
+const listActiveMemberships = `-- name: ListActiveMemberships :many
+SELECT event_id
+FROM event_members
+WHERE user_id = $1
+  AND status = 'active'
+  AND event_id = ANY($2::uuid[])
+`
+
+type ListActiveMembershipsParams struct {
+	UserID   uuid.UUID
+	EventIds []uuid.UUID
+}
+
+func (q *Queries) ListActiveMemberships(ctx context.Context, arg ListActiveMembershipsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listActiveMemberships, arg.UserID, arg.EventIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var event_id uuid.UUID
+		if err := rows.Scan(&event_id); err != nil {
+			return nil, err
+		}
+		items = append(items, event_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markPurchaseFailed = `-- name: MarkPurchaseFailed :one
 UPDATE event_purchases
 SET status = 'failed',
@@ -593,6 +626,42 @@ RETURNING id, event_id, user_id, amount_minor, status, provider, provider_paymen
 
 func (q *Queries) MarkPurchaseFailed(ctx context.Context, id uuid.UUID) (EventPurchase, error) {
 	row := q.db.QueryRow(ctx, markPurchaseFailed, id)
+	var i EventPurchase
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.AmountMinor,
+		&i.Status,
+		&i.Provider,
+		&i.ProviderPaymentID,
+		&i.IdempotencyKey,
+		&i.CheckoutUrl,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LockedAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PaidAt,
+		&i.RefundedAt,
+	)
+	return i, err
+}
+
+const markPurchaseFailedForTicket = `-- name: MarkPurchaseFailedForTicket :one
+UPDATE event_purchases
+SET status = 'failed',
+    updated_at = now()
+WHERE id = $1
+  AND status IN ('initiated', 'processing')
+RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+          idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+          last_error, created_at, updated_at, paid_at, refunded_at
+`
+
+func (q *Queries) MarkPurchaseFailedForTicket(ctx context.Context, id uuid.UUID) (EventPurchase, error) {
+	row := q.db.QueryRow(ctx, markPurchaseFailedForTicket, id)
 	var i EventPurchase
 	err := row.Scan(
 		&i.ID,
@@ -766,6 +835,91 @@ func (q *Queries) ReserveEventTicket(ctx context.Context, id uuid.UUID) (Reserve
 		&i.AvailableTickets,
 		&i.StartsAt,
 		&i.EndsAt,
+	)
+	return i, err
+}
+
+const resetPurchaseForRetry = `-- name: ResetPurchaseForRetry :one
+UPDATE event_purchases
+SET idempotency_key = $2,
+    status = 'initiated',
+    checkout_url = NULL,
+    provider_payment_id = NULL,
+    paid_at = NULL,
+    refunded_at = NULL,
+    attempt_count = 0,
+    next_attempt_at = now(),
+    locked_at = NULL,
+    last_error = NULL,
+    updated_at = now()
+WHERE id = $1
+  AND status IN ('failed', 'refunded')
+RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
+          idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
+          last_error, created_at, updated_at, paid_at, refunded_at
+`
+
+type ResetPurchaseForRetryParams struct {
+	ID             uuid.UUID
+	IdempotencyKey string
+}
+
+func (q *Queries) ResetPurchaseForRetry(ctx context.Context, arg ResetPurchaseForRetryParams) (EventPurchase, error) {
+	row := q.db.QueryRow(ctx, resetPurchaseForRetry, arg.ID, arg.IdempotencyKey)
+	var i EventPurchase
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.AmountMinor,
+		&i.Status,
+		&i.Provider,
+		&i.ProviderPaymentID,
+		&i.IdempotencyKey,
+		&i.CheckoutUrl,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LockedAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PaidAt,
+		&i.RefundedAt,
+	)
+	return i, err
+}
+
+const resetTicketForRetry = `-- name: ResetTicketForRetry :one
+UPDATE tickets
+SET status = 'temporarily_reserved',
+    reserved_at = $2,
+    reservation_expires_at = $3,
+    issued_at = NULL,
+    revoked_at = NULL
+WHERE id = $1
+RETURNING id, event_id, user_id, purchase_id, status, reserved_at,
+          reservation_expires_at, issued_at, revoked_at
+`
+
+type ResetTicketForRetryParams struct {
+	ID                   uuid.UUID
+	ReservedAt           pgtype.Timestamptz
+	ReservationExpiresAt pgtype.Timestamptz
+}
+
+func (q *Queries) ResetTicketForRetry(ctx context.Context, arg ResetTicketForRetryParams) (Ticket, error) {
+	row := q.db.QueryRow(ctx, resetTicketForRetry, arg.ID, arg.ReservedAt, arg.ReservationExpiresAt)
+	var i Ticket
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.PurchaseID,
+		&i.Status,
+		&i.ReservedAt,
+		&i.ReservationExpiresAt,
+		&i.IssuedAt,
+		&i.RevokedAt,
 	)
 	return i, err
 }

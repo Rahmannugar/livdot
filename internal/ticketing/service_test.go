@@ -13,10 +13,16 @@ type stubStore struct {
 	purchase       Purchase
 	byIdempotency  *Purchase
 	byEventAndUser *Purchase
+	resetForRetry  bool
 }
 
 func (store *stubStore) EventForReservation(context.Context, string) (ReservableEvent, error) {
-	return ReservableEvent{}, nil
+	return ReservableEvent{
+		ID:               "event-1",
+		Status:           "upcoming",
+		AmountMinor:      500000,
+		AvailableTickets: 10,
+	}, nil
 }
 func (store *stubStore) FindPurchaseByIdempotencyKey(context.Context, string, string) (Purchase, error) {
 	if store.byIdempotency != nil {
@@ -55,8 +61,12 @@ func (store *stubStore) TicketByPurchase(context.Context, string) (Ticket, error
 func (store *stubStore) ExpireReservations(context.Context, int32) (int, error) {
 	return 0, nil
 }
-func (store *stubStore) ActiveMembership(context.Context, string, string) (bool, error) {
-	return false, nil
+func (store *stubStore) ActiveEventIDs(context.Context, string, []string) (map[string]bool, error) {
+	return map[string]bool{}, nil
+}
+func (store *stubStore) ResetForRetry(context.Context, RetryInput) (Purchase, error) {
+	store.resetForRetry = true
+	return store.purchase, nil
 }
 
 type stubDirectory struct{}
@@ -111,7 +121,7 @@ func TestSettlePaidGrantsAccessOnPaidCharge(t *testing.T) {
 // account already bought returns ErrAlreadyPurchased, which the handler reports
 // as 409.
 func TestPurchaseRejectsSecondPurchase(t *testing.T) {
-	existing := Purchase{ID: "purchase-1", UserID: "user-1", EventID: "event-1"}
+	existing := Purchase{ID: "purchase-1", UserID: "user-1", EventID: "event-1", Status: PurchasePaid}
 	service, err := NewService(
 		&stubStore{byEventAndUser: &existing},
 		mustProvider(t),
@@ -151,6 +161,27 @@ func TestPurchaseReplayFillsCheckout(t *testing.T) {
 	}
 	if replayed.CheckoutExpiresAt == nil {
 		t.Fatal("replayed purchase should carry checkoutExpiresAt")
+	}
+}
+
+// TestPurchaseAllowsRetryAfterRefund proves a refunded buyer is not locked out:
+// the refunded purchase is reset for a new attempt instead of blocking.
+func TestPurchaseAllowsRetryAfterRefund(t *testing.T) {
+	refunded := Purchase{ID: "purchase-1", UserID: "user-1", EventID: "event-1", Status: PurchaseRefunded}
+	store := &stubStore{
+		byEventAndUser: &refunded,
+		purchase:       Purchase{ID: "purchase-1", UserID: "user-1", EventID: "event-1", Status: PurchaseInitiated},
+	}
+	service, err := NewService(store, mustProvider(t), &stubRefunder{}, stubDirectory{})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if _, err := service.Purchase(context.Background(), uuid.NewString(), uuid.NewString(), uuid.NewString()); err != nil {
+		t.Fatalf("Purchase() error = %v, want a fresh attempt", err)
+	}
+	if !store.resetForRetry {
+		t.Fatal("a refunded purchase should be reset for retry")
 	}
 }
 

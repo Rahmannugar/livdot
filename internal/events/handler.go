@@ -18,9 +18,8 @@ import (
 
 type ServiceAPI interface {
 	Create(ctx context.Context, hostID string, input CreateInput) (Event, error)
-	List(ctx context.Context, filter Filter) (Page, error)
-	Detail(ctx context.Context, id string) (Event, error)
-	Access(ctx context.Context, eventID, accountID string) (bool, error)
+	List(ctx context.Context, accountID string, filter Filter) (Page, error)
+	Detail(ctx context.Context, accountID, id string) (Event, error)
 	Update(ctx context.Context, hostID, id string, input UpdateInput) (Event, error)
 }
 
@@ -91,7 +90,7 @@ type eventResponse struct {
 	CancelledAt      *time.Time    `json:"cancelledAt"`
 	CreatedAt        time.Time     `json:"createdAt"`
 	UpdatedAt        time.Time     `json:"updatedAt"`
-	Paid             bool          `json:"paid"`
+	Purchased        bool          `json:"purchased"`
 }
 
 func (handler *Handler) create(ctx *gin.Context) {
@@ -132,7 +131,8 @@ func (handler *Handler) list(ctx *gin.Context) {
 		writeEventError(ctx, err)
 		return
 	}
-	page, err := handler.service.List(ctx.Request.Context(), filter)
+	identity, _ := authentication.IdentityFrom(ctx)
+	page, err := handler.service.List(ctx.Request.Context(), identity.AccountID, filter)
 	if err != nil {
 		writeEventError(ctx, err)
 		return
@@ -145,22 +145,13 @@ func (handler *Handler) list(ctx *gin.Context) {
 }
 
 func (handler *Handler) detail(ctx *gin.Context) {
-	identity, ok := authentication.IdentityFrom(ctx)
-	if !ok {
-		writeEventError(ctx, authentication.ErrUnauthenticated)
-		return
-	}
-	event, err := handler.service.Detail(ctx.Request.Context(), ctx.Param("id"))
+	identity, _ := authentication.IdentityFrom(ctx)
+	event, err := handler.service.Detail(ctx.Request.Context(), identity.AccountID, ctx.Param("id"))
 	if err != nil {
 		writeEventError(ctx, err)
 		return
 	}
-	response := newEventResponse(event)
-	// the caller's own paid access, not the event's.
-	if paid, err := handler.service.Access(ctx.Request.Context(), event.ID, identity.AccountID); err == nil {
-		response.Paid = paid
-	}
-	ctx.JSON(http.StatusOK, response)
+	ctx.JSON(http.StatusOK, newEventResponse(event))
 }
 
 func (handler *Handler) update(ctx *gin.Context) {
@@ -275,6 +266,7 @@ func newEventResponse(event Event) eventResponse {
 		CancelledAt:      event.CancelledAt,
 		CreatedAt:        event.CreatedAt,
 		UpdatedAt:        event.UpdatedAt,
+		Purchased:        event.Purchased,
 	}
 	if event.AssignedCrew != nil {
 		response.AssignedCrew = &crewResponse{

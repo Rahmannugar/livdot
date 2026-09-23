@@ -684,6 +684,30 @@ func (q *Queries) MarkRefunded(ctx context.Context, arg MarkRefundedParams) (Eve
 	return i, err
 }
 
+const revokeEntitlementByPurchase = `-- name: RevokeEntitlementByPurchase :execrows
+WITH revoked_ticket AS (
+    UPDATE tickets
+    SET status = 'revoked',
+        revoked_at = now()
+    WHERE purchase_id = $1
+      AND status IN ('issued', 'temporarily_reserved')
+    RETURNING id
+)
+UPDATE event_members
+SET status = 'revoked',
+    revoked_at = now()
+WHERE ticket_id IN (SELECT id FROM revoked_ticket)
+  AND status = 'active'
+`
+
+func (q *Queries) RevokeEntitlementByPurchase(ctx context.Context, purchaseID uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeEntitlementByPurchase, purchaseID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const sumPaidPurchases = `-- name: SumPaidPurchases :one
 SELECT COALESCE(SUM(amount_minor), 0)::bigint AS amount_minor
 FROM event_purchases

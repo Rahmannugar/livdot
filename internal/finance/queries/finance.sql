@@ -168,3 +168,18 @@ RETURNING id, event_id, entry_type, amount_minor, purchase_id, refund_id, payout
 SELECT status
 FROM event_streams
 WHERE event_id = $1;
+
+-- name: RevokeEntitlementByPurchase :execrows
+WITH revoked_ticket AS (
+    UPDATE tickets
+    SET status = 'revoked',
+        revoked_at = now()
+    WHERE purchase_id = $1
+      AND status IN ('issued', 'temporarily_reserved')
+    RETURNING id
+)
+UPDATE event_members
+SET status = 'revoked',
+    revoked_at = now()
+WHERE ticket_id IN (SELECT id FROM revoked_ticket)
+  AND status = 'active';

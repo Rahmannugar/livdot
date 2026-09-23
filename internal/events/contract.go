@@ -35,7 +35,7 @@ func RegisterContract(registry *openapi.Registry) {
 			"cancelledAt":      map[string]any{"type": "string", "format": "date-time", "nullable": true, "example": nil},
 			"createdAt":        map[string]any{"type": "string", "format": "date-time", "example": "2026-09-23T17:50:00Z"},
 			"updatedAt":        map[string]any{"type": "string", "format": "date-time", "example": "2026-09-23T17:50:00Z"},
-			"paid":             map[string]any{"type": "boolean", "description": "Whether the requesting account holds paid access", "example": false},
+			"purchased":        map[string]any{"type": "boolean", "description": "Whether the requesting account holds paid access", "example": false},
 		},
 	})
 	registry.Component("EventPage", map[string]any{

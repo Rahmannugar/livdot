@@ -225,7 +225,7 @@
             "example": "Live Show",
             "type": "string"
           },
-          "paid": {
+          "purchased": {
             "description": "Whether the requesting account holds paid access",
             "example": false,
             "type": "boolean"

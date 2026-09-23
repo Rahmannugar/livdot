@@ -328,26 +328,86 @@ func (store *TicketStore) TicketByPurchase(ctx context.Context, purchaseID strin
 	return ticketFromRecord(record), nil
 }
 
-func (store *TicketStore) ActiveMembership(ctx context.Context, eventID, userID string) (bool, error) {
-	event, err := uuid.Parse(eventID)
+// ResetForRetry reopens a failed purchase for the same event. It takes a fresh
+// slot and reuses the existing purchase and ticket rows so the one-per-event
+// uniqueness holds.
+func (store *TicketStore) ResetForRetry(ctx context.Context, input ticketing.RetryInput) (ticketing.Purchase, error) {
+	purchaseID, err := uuid.Parse(input.PurchaseID)
 	if err != nil {
-		return false, ticketing.ErrInvalidInput
+		return ticketing.Purchase{}, ticketing.ErrInvalidInput
 	}
-	user, err := uuid.Parse(userID)
+	eventID, err := uuid.Parse(input.EventID)
 	if err != nil {
-		return false, ticketing.ErrInvalidInput
+		return ticketing.Purchase{}, ticketing.ErrInvalidInput
 	}
-	record, err := ticketingdb.New(store.pool).GetEventMemberByUser(ctx, ticketingdb.GetEventMemberByUserParams{
-		EventID: event,
-		UserID:  user,
+
+	tx, err := store.pool.Begin(ctx)
+	if err != nil {
+		return ticketing.Purchase{}, fmt.Errorf("begin retry: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	queries := ticketingdb.New(tx)
+	if _, err := queries.ReserveEventTicket(ctx, eventID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ticketing.Purchase{}, ticketing.ErrSoldOut
+		}
+		return ticketing.Purchase{}, fmt.Errorf("reserve event ticket: %w", err)
+	}
+	record, err := queries.ResetPurchaseForRetry(ctx, ticketingdb.ResetPurchaseForRetryParams{
+		ID:             purchaseID,
+		IdempotencyKey: input.IdempotencyKey,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
+		// the row is no longer failed (a paid webhook won the race).
+		return ticketing.Purchase{}, ticketing.ErrAlreadyPurchased
 	}
 	if err != nil {
-		return false, fmt.Errorf("get event member: %w", err)
+		return ticketing.Purchase{}, fmt.Errorf("reset purchase: %w", err)
 	}
-	return record.Status == ticketingdb.MembershipStatusActive, nil
+	ticket, err := queries.GetTicketByPurchase(ctx, purchaseID)
+	if err != nil {
+		return ticketing.Purchase{}, fmt.Errorf("get ticket for retry: %w", err)
+	}
+	if _, err := queries.ResetTicketForRetry(ctx, ticketingdb.ResetTicketForRetryParams{
+		ID:                   ticket.ID,
+		ReservedAt:           timestamp(input.ReservedAt),
+		ReservationExpiresAt: timestamp(input.ExpiresAt),
+	}); err != nil {
+		return ticketing.Purchase{}, fmt.Errorf("reset ticket: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ticketing.Purchase{}, fmt.Errorf("commit retry: %w", err)
+	}
+	return purchaseFromRecord(record), nil
+}
+
+func (store *TicketStore) ActiveEventIDs(ctx context.Context, userID string, eventIDs []string) (map[string]bool, error) {
+	user, err := uuid.Parse(userID)
+	if err != nil {
+		return map[string]bool{}, nil
+	}
+	ids := make([]uuid.UUID, 0, len(eventIDs))
+	for _, raw := range eventIDs {
+		if parsed, parseErr := uuid.Parse(raw); parseErr == nil {
+			ids = append(ids, parsed)
+		}
+	}
+	if len(ids) == 0 {
+		return map[string]bool{}, nil
+	}
+	records, err := ticketingdb.New(store.pool).ListActiveMemberships(ctx, ticketingdb.ListActiveMembershipsParams{
+		UserID:   user,
+		EventIds: ids,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list active memberships: %w", err)
+	}
+	result := make(map[string]bool, len(records))
+	for _, record := range records {
+		result[record.String()] = true
+	}
+	return result, nil
 }
 
 // ExpireReservations claims lapsed reservations and returns each held slot to
@@ -368,6 +428,11 @@ func (store *TicketStore) ExpireReservations(ctx context.Context, limit int32) (
 	for _, ticket := range tickets {
 		if _, err := queries.ReleaseEventTicket(ctx, ticket.EventID); err != nil {
 			return 0, fmt.Errorf("release expired ticket: %w", err)
+		}
+		// the reservation lapsed, so the purchase is terminal and can be retried.
+		if _, err := queries.MarkPurchaseFailedForTicket(ctx, ticket.PurchaseID); err != nil &&
+			!errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("fail expired purchase: %w", err)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
