@@ -49,7 +49,8 @@ idempotent and returns `204`.
 | GET | `/api/tickets/{id}` | user | Read a ticket |
 
 Purchases are one per user per event. A reservation holds a slot for ten
-minutes; the response exposes `ticketId` and `checkoutUrl`.
+minutes; the response exposes `ticketId`, `checkoutUrl`, and
+`checkoutExpiresAt`.
 
 ## Streaming
 
@@ -81,6 +82,12 @@ internal admins, so an account cannot read another account's money records.
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
 | POST | `/api/webhooks/payments` | public | Receive a signed provider callback; authenticity is the signature |
+| POST | `/api/dev/payments/notify` | public | Development only: sign and deliver a mocked payment callback |
+
+The development simulator exists so the mocked payment flow is reachable from a
+client. It signs a real payload and runs it through the same webhook path as the
+provider. It is never mounted in production. Body:
+`{"purchaseId": "<id>", "outcome": "processing|paid|failed"}`.
 
 ## Health and documentation
 

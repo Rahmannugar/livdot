@@ -216,10 +216,9 @@ func (store *TicketStore) SettlePaid(ctx context.Context, input ticketing.Settle
 	}
 	ticketRecord, err := queries.IssueTicketByPurchase(ctx, purchaseID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		// reservation lapsed, so this is a late payment.
-		if _, failErr := queries.MarkPurchaseFailed(ctx, purchaseID); failErr != nil {
-			return ticketing.SettleResult{}, fmt.Errorf("mark late purchase failed: %w", failErr)
-		}
+		// The reservation lapsed, so this is a late payment. The charge stands,
+		// so the purchase stays paid and the caller refunds it; a late refund
+		// must not overwrite the paid state with a failure.
 		if err := tx.Commit(ctx); err != nil {
 			return ticketing.SettleResult{}, fmt.Errorf("commit late payment: %w", err)
 		}

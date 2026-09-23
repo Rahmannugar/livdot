@@ -144,6 +144,35 @@ func TestTicketReservationAgainstPostgres(t *testing.T) {
 			t.Fatalf("members = %d, want 1", members)
 		}
 	})
+
+	// a payment that settles after the reservation lapsed is refundable, not a
+	// failure: the charge stands and the purchase stays paid.
+	t.Run("late payment settles as paid and expired", func(t *testing.T) {
+		eventID, _ := seedEvent(t, ctx, pool, 5)
+		userID := seedAccount(t, ctx, pool, "user")
+		expired := reserveInput(eventID, userID)
+		expired.ReservedAt = time.Now().Add(-2 * time.Minute)
+		expired.ExpiresAt = time.Now().Add(-time.Minute)
+		purchase, _, err := store.Reserve(ctx, expired)
+		if err != nil {
+			t.Fatalf("Reserve() error = %v", err)
+		}
+
+		result, err := store.SettlePaid(ctx, ticketing.SettleInput{
+			PurchaseID:        purchase.ID,
+			ProviderPaymentID: "mock_chg_late",
+			MemberID:          uuid.NewString(),
+		})
+		if err != nil {
+			t.Fatalf("SettlePaid() error = %v", err)
+		}
+		if !result.Expired {
+			t.Fatal("late payment should report Expired")
+		}
+		if result.Purchase.Status != ticketing.PurchasePaid {
+			t.Fatalf("status = %q, want paid", result.Purchase.Status)
+		}
+	})
 }
 
 func reserve(

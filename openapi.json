@@ -405,6 +405,12 @@
             "format": "int64",
             "type": "integer"
           },
+          "checkoutExpiresAt": {
+            "example": "2026-09-23T18:08:00Z",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "checkoutUrl": {
             "example": "https://mock.paystack.local/checkout/018f2c1e-aaaa-7c3b-9d4e-2b8a1c5f7e90",
             "nullable": true,
@@ -556,6 +562,21 @@
         "required": [
           "email",
           "password"
+        ],
+        "type": "object"
+      },
+      "SimulatePaymentRequest": {
+        "properties": {
+          "outcome": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "purchaseId"
         ],
         "type": "object"
       },
@@ -1005,6 +1026,86 @@
         ],
         "x-roles": [
           "host"
+        ]
+      }
+    },
+    "/api/dev/payments/notify": {
+      "post": {
+        "operationId": "simulatePayment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulatePaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "example": "delivered",
+                      "type": "string"
+                    },
+                    "type": {
+                      "enum": [
+                        "charge.processing",
+                        "charge.paid",
+                        "charge.failed"
+                      ],
+                      "example": "charge.paid",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "rate limited"
+          }
+        },
+        "summary": "Development only: deliver a signed mocked payment callback",
+        "tags": [
+          "webhooks"
         ]
       }
     },

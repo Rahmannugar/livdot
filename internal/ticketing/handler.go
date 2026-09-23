@@ -49,15 +49,16 @@ type purchaseRequest struct {
 }
 
 type purchaseResponse struct {
-	ID          string     `json:"id"`
-	EventID     string     `json:"eventId"`
-	UserID      string     `json:"userId"`
-	AmountMinor int64      `json:"amountMinor"`
-	Status      string     `json:"status"`
-	CheckoutURL *string    `json:"checkoutUrl"`
-	TicketID    string     `json:"ticketId"`
-	PaidAt      *time.Time `json:"paidAt"`
-	CreatedAt   time.Time  `json:"createdAt"`
+	ID                string     `json:"id"`
+	EventID           string     `json:"eventId"`
+	UserID            string     `json:"userId"`
+	AmountMinor       int64      `json:"amountMinor"`
+	Status            string     `json:"status"`
+	CheckoutURL       *string    `json:"checkoutUrl"`
+	CheckoutExpiresAt *time.Time `json:"checkoutExpiresAt"`
+	TicketID          string     `json:"ticketId"`
+	PaidAt            *time.Time `json:"paidAt"`
+	CreatedAt         time.Time  `json:"createdAt"`
 }
 
 type ticketResponse struct {
@@ -106,15 +107,16 @@ func (handler *Handler) ticket(ctx *gin.Context) {
 
 func newPurchaseResponse(purchase Purchase) purchaseResponse {
 	return purchaseResponse{
-		ID:          purchase.ID,
-		EventID:     purchase.EventID,
-		UserID:      purchase.UserID,
-		AmountMinor: purchase.AmountMinor,
-		Status:      purchase.Status,
-		CheckoutURL: purchase.CheckoutURL,
-		TicketID:    purchase.TicketID,
-		PaidAt:      purchase.PaidAt,
-		CreatedAt:   purchase.CreatedAt,
+		ID:                purchase.ID,
+		EventID:           purchase.EventID,
+		UserID:            purchase.UserID,
+		AmountMinor:       purchase.AmountMinor,
+		Status:            purchase.Status,
+		CheckoutURL:       purchase.CheckoutURL,
+		CheckoutExpiresAt: purchase.CheckoutExpiresAt,
+		TicketID:          purchase.TicketID,
+		PaidAt:            purchase.PaidAt,
+		CreatedAt:         purchase.CreatedAt,
 	}
 }
 

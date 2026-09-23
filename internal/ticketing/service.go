@@ -53,6 +53,7 @@ type Purchase struct {
 	IdempotencyKey    string
 	CheckoutURL       *string
 	TicketID          string
+	CheckoutExpiresAt *time.Time
 	PaidAt            *time.Time
 	CreatedAt         time.Time
 }
@@ -162,7 +163,13 @@ func NewService(store Store, provider payment.Provider, refunder Refunder, direc
 	if directory == nil {
 		return nil, fmt.Errorf("recipient directory is required")
 	}
-	return &Service{store: store, provider: provider, refunder: refunder, now: time.Now}, nil
+	return &Service{
+		store:     store,
+		provider:  provider,
+		refunder:  refunder,
+		directory: directory,
+		now:       time.Now,
+	}, nil
 }
 
 // Purchase holds a slot, records a payment intent, and returns the checkout URL.
@@ -230,6 +237,9 @@ func (service *Service) Purchase(
 		return Purchase{}, err
 	}
 	purchase.TicketID = ticket.ID
+	// the checkout is only valid while the reservation holds the slot.
+	expiresAt := ticket.ReservationExpiresAt
+	purchase.CheckoutExpiresAt = &expiresAt
 
 	charge, err := service.provider.InitiateCharge(ctx, payment.ChargeRequest{
 		Reference:      purchase.ID,
