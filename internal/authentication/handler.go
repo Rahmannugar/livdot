@@ -46,11 +46,11 @@ func RegisterRoutes(router gin.IRoutes, service ServiceAPI, limiter *ratelimit.L
 	handler := NewHandler(service)
 	signUp := limiter.Middleware(signUpPolicy)
 	signIn := limiter.Middleware(signInPolicy)
-	router.POST("/api/signup/host", signUp, handler.signup(RoleHost))
+	router.POST("/api/signup/host", signUp, handler.signupHost)
 	router.POST("/api/signin/host", signIn, handler.signin(RoleHost))
-	router.POST("/api/signup/crew", signUp, handler.signup(RoleCrew))
+	router.POST("/api/signup/crew", signUp, handler.signupCrew)
 	router.POST("/api/signin/crew", signIn, handler.signin(RoleCrew))
-	router.POST("/api/signup/user", signUp, handler.signup(RoleUser))
+	router.POST("/api/signup/user", signUp, handler.signupUser)
 	router.POST("/api/signin/user", signIn, handler.signin(RoleUser))
 	router.POST("/api/signin/internal", signIn, handler.signin(RoleInternalAdmin))
 	router.POST("/api/signout", limiter.Middleware(signOutPolicy), handler.signout)
@@ -71,38 +71,85 @@ func (handler *Handler) signout(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
-type credentialRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	FullName string `json:"fullName"`
-	CrewName string `json:"crewName"`
+// one request body per auth operation so binding and the generated contract
+// describe exactly the fields each endpoint accepts.
+type signInRequest struct {
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
 }
 
-func (handler *Handler) signup(role Role) gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		var request credentialRequest
-		if err := ctx.ShouldBindJSON(&request); err != nil {
-			writeAuthError(ctx, emailpassword.ErrInvalidInput)
-			return
-		}
-		result, err := handler.service.Register(ctx.Request.Context(), role, Credentials{
-			Email:     request.Email,
-			Password:  request.Password,
-			FullName:  request.FullName,
-			CrewName:  request.CrewName,
-			SourceKey: ctx.ClientIP(),
-		})
-		if err != nil {
-			writeAuthError(ctx, err)
-			return
-		}
-		ctx.JSON(http.StatusCreated, result)
+type hostSignUpRequest struct {
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	FullName string `json:"fullName" binding:"required"`
+}
+
+type crewSignUpRequest struct {
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	CrewName string `json:"crewName" binding:"required"`
+}
+
+type userSignUpRequest struct {
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	FullName string `json:"fullName" binding:"required"`
+}
+
+func (handler *Handler) signupHost(ctx *gin.Context) {
+	var request hostSignUpRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		writeAuthError(ctx, emailpassword.ErrInvalidInput)
+		return
 	}
+	handler.register(ctx, RoleHost, Credentials{
+		Email:     request.Email,
+		Password:  request.Password,
+		FullName:  request.FullName,
+		SourceKey: ctx.ClientIP(),
+	})
+}
+
+func (handler *Handler) signupCrew(ctx *gin.Context) {
+	var request crewSignUpRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		writeAuthError(ctx, emailpassword.ErrInvalidInput)
+		return
+	}
+	handler.register(ctx, RoleCrew, Credentials{
+		Email:     request.Email,
+		Password:  request.Password,
+		CrewName:  request.CrewName,
+		SourceKey: ctx.ClientIP(),
+	})
+}
+
+func (handler *Handler) signupUser(ctx *gin.Context) {
+	var request userSignUpRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		writeAuthError(ctx, emailpassword.ErrInvalidInput)
+		return
+	}
+	handler.register(ctx, RoleUser, Credentials{
+		Email:     request.Email,
+		Password:  request.Password,
+		FullName:  request.FullName,
+		SourceKey: ctx.ClientIP(),
+	})
+}
+
+func (handler *Handler) register(ctx *gin.Context, role Role, credentials Credentials) {
+	result, err := handler.service.Register(ctx.Request.Context(), role, credentials)
+	if err != nil {
+		writeAuthError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusCreated, result)
 }
 
 func (handler *Handler) signin(role Role) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		var request credentialRequest
+		var request signInRequest
 		if err := ctx.ShouldBindJSON(&request); err != nil {
 			writeAuthError(ctx, emailpassword.ErrInvalidInput)
 			return

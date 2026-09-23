@@ -25,13 +25,15 @@ const (
 func Document() map[string]any {
 	registry := openapilib.NewRegistry()
 	registry.Component("Error", map[string]any{
-		"type": "object",
+		"type":     "object",
+		"required": []string{"error"},
 		"properties": map[string]any{
 			"error": map[string]any{
-				"type": "object",
+				"type":     "object",
+				"required": []string{"code", "message"},
 				"properties": map[string]any{
-					"code":    map[string]any{"type": "string"},
-					"message": map[string]any{"type": "string"},
+					"code":    map[string]any{"type": "string", "example": "invalid_request"},
+					"message": map[string]any{"type": "string", "example": "event details are invalid"},
 				},
 			},
 		},

@@ -5,16 +5,21 @@ import "github.com/Rahmannugar/livdot/internal/infra/openapi"
 // RegisterContract registers the liveness and readiness probes.
 func RegisterContract(registry *openapi.Registry) {
 	status := map[string]any{
-		"type":       "object",
-		"properties": map[string]any{"status": map[string]any{"type": "string"}},
+		"type":     "object",
+		"required": []string{"status"},
+		"properties": map[string]any{
+			"status": map[string]any{"type": "string", "example": "ok"},
+		},
 	}
 	readiness := map[string]any{
-		"type": "object",
+		"type":     "object",
+		"required": []string{"status", "dependencies"},
 		"properties": map[string]any{
-			"status": map[string]any{"type": "string"},
+			"status": map[string]any{"type": "string", "example": "ready"},
 			"dependencies": map[string]any{
 				"type":                 "object",
 				"additionalProperties": map[string]any{"type": "string"},
+				"example":              map[string]any{"postgres": "ok", "redis": "ok"},
 			},
 		},
 	}

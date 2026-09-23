@@ -9,8 +9,11 @@ func RegisterContract(registry *openapi.Registry) {
 		Summary: "Receive a signed payment provider callback", Tag: "webhooks",
 		Responses: map[string]any{
 			"200": map[string]any{
-				"type":       "object",
-				"properties": map[string]any{"status": map[string]any{"type": "string"}},
+				"type":     "object",
+				"required": []string{"status"},
+				"properties": map[string]any{
+					"status": map[string]any{"type": "string", "example": "received"},
+				},
 			},
 			"400": openapi.Ref("Error"), "401": openapi.Ref("Error"), "429": openapi.Ref("Error"),
 		},

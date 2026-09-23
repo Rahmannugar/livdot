@@ -116,12 +116,14 @@ func (registry *Registry) operation(operation Operation) map[string]any {
 func (registry *Registry) responses(operation Operation) map[string]any {
 	responses := map[string]any{}
 	for status, schema := range operation.Responses {
-		responses[status] = map[string]any{
-			"description": responseDescription(status),
-			"content": map[string]any{
+		entry := map[string]any{"description": responseDescription(status)}
+		// a nil schema means the status carries no body (for example 204).
+		if schema != nil {
+			entry["content"] = map[string]any{
 				"application/json": map[string]any{"schema": schema},
-			},
+			}
 		}
+		responses[status] = entry
 	}
 	return responses
 }
@@ -189,13 +191,14 @@ func Ref(name string) map[string]any {
 }
 
 // RequestSchema reflects a request struct into an object schema. A field is
-// required when it is not a pointer and not omitempty, which matches how the
-// handlers distinguish set from unset.
+// required when it is not a pointer, not omitempty, and not a tri-state
+// RawMessage (which may be absent, null, or present).
 func RequestSchema(sample any) map[string]any {
 	value := reflect.TypeOf(sample)
 	if value.Kind() == reflect.Ptr {
 		value = value.Elem()
 	}
+	rawMessage := reflect.TypeOf(json.RawMessage{})
 	properties := map[string]any{}
 	var required []string
 	for i := 0; i < value.NumField(); i++ {
@@ -205,7 +208,7 @@ func RequestSchema(sample any) map[string]any {
 			continue
 		}
 		properties[name] = fieldSchema(field.Type)
-		if !optional && field.Type.Kind() != reflect.Ptr {
+		if !optional && field.Type.Kind() != reflect.Ptr && field.Type != rawMessage {
 			required = append(required, name)
 		}
 	}

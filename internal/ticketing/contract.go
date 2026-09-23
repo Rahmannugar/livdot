@@ -2,41 +2,49 @@ package ticketing
 
 import "github.com/Rahmannugar/livdot/internal/infra/openapi"
 
-// RegisterContract registers the purchase and ticket routes and their hand-maintained results.
+// RegisterContract registers the purchase and ticket routes and their results.
 func RegisterContract(registry *openapi.Registry) {
-	purchase := map[string]any{
+	registry.Component("Purchase", map[string]any{
 		"type": "object",
-		"properties": map[string]any{
-			"id":          map[string]any{"type": "string"},
-			"eventId":     map[string]any{"type": "string"},
-			"userId":      map[string]any{"type": "string"},
-			"amountMinor": map[string]any{"type": "integer", "format": "int64"},
-			"status":      map[string]any{"type": "string", "enum": []string{"initiated", "processing", "paid", "refunded", "failed"}},
-			"checkoutUrl": map[string]any{"type": "string", "nullable": true},
-			"ticketId":    map[string]any{"type": "string"},
-			"paidAt":      map[string]any{"type": "string", "format": "date-time", "nullable": true},
-			"createdAt":   map[string]any{"type": "string", "format": "date-time"},
+		"required": []string{
+			"id", "eventId", "userId", "amountMinor", "status", "ticketId", "createdAt",
 		},
-	}
-	ticket := map[string]any{
+		"properties": map[string]any{
+			"id":          map[string]any{"type": "string", "example": "018f2c1e-aaaa-7c3b-9d4e-2b8a1c5f7e90"},
+			"eventId":     map[string]any{"type": "string", "example": "018f2c1e-9a11-7c3b-9d4e-2b8a1c5f7e90"},
+			"userId":      map[string]any{"type": "string", "example": "018f2c1e-bbbb-7c3b-9d4e-2b8a1c5f7e90"},
+			"amountMinor": map[string]any{"type": "integer", "format": "int64", "example": 500000},
+			"status":      map[string]any{"type": "string", "enum": []string{"initiated", "processing", "paid", "refunded", "failed"}, "example": "initiated"},
+			"checkoutUrl": map[string]any{"type": "string", "nullable": true, "example": "https://mock.paystack.local/checkout/018f2c1e-aaaa-7c3b-9d4e-2b8a1c5f7e90"},
+			"ticketId":    map[string]any{"type": "string", "example": "018f2c1e-cccc-7c3b-9d4e-2b8a1c5f7e90"},
+			"paidAt":      map[string]any{"type": "string", "format": "date-time", "nullable": true, "example": nil},
+			"createdAt":   map[string]any{"type": "string", "format": "date-time", "example": "2026-09-23T17:58:00Z"},
+		},
+	})
+	registry.Component("Ticket", map[string]any{
 		"type": "object",
-		"properties": map[string]any{
-			"id":                   map[string]any{"type": "string"},
-			"eventId":              map[string]any{"type": "string"},
-			"userId":               map[string]any{"type": "string"},
-			"status":               map[string]any{"type": "string", "enum": []string{"temporarily_reserved", "reservation_expired", "issued", "revoked"}},
-			"reservationExpiresAt": map[string]any{"type": "string", "format": "date-time"},
-			"issuedAt":             map[string]any{"type": "string", "format": "date-time", "nullable": true},
+		"required": []string{
+			"id", "eventId", "userId", "status", "reservationExpiresAt",
 		},
-	}
+		"properties": map[string]any{
+			"id":                   map[string]any{"type": "string", "example": "018f2c1e-cccc-7c3b-9d4e-2b8a1c5f7e90"},
+			"eventId":              map[string]any{"type": "string", "example": "018f2c1e-9a11-7c3b-9d4e-2b8a1c5f7e90"},
+			"userId":               map[string]any{"type": "string", "example": "018f2c1e-bbbb-7c3b-9d4e-2b8a1c5f7e90"},
+			"status":               map[string]any{"type": "string", "enum": []string{"temporarily_reserved", "reservation_expired", "issued", "revoked"}, "example": "issued"},
+			"reservationExpiresAt": map[string]any{"type": "string", "format": "date-time", "example": "2026-09-23T18:08:00Z"},
+			"issuedAt":             map[string]any{"type": "string", "format": "date-time", "nullable": true, "example": "2026-09-23T18:01:00Z"},
+		},
+	})
+
 	registry.Add(openapi.Operation{
 		Method: "post", Path: "/api/events/{id}/purchase", OperationID: "purchaseTicket",
 		Summary: "Reserve a ticket and start a payment", Tag: "ticketing",
 		Security: true, Roles: []string{"user"},
 		Request: purchaseRequest{}, RequestName: "PurchaseTicketRequest",
 		Responses: map[string]any{
-			"201": purchase, "400": openapi.Ref("Error"), "401": openapi.Ref("Error"),
-			"403": openapi.Ref("Error"), "409": openapi.Ref("Error"), "429": openapi.Ref("Error"),
+			"201": openapi.Ref("Purchase"), "400": openapi.Ref("Error"),
+			"401": openapi.Ref("Error"), "403": openapi.Ref("Error"),
+			"409": openapi.Ref("Error"), "429": openapi.Ref("Error"),
 		},
 	})
 	registry.Add(openapi.Operation{
@@ -44,7 +52,7 @@ func RegisterContract(registry *openapi.Registry) {
 		Summary: "Get a ticket the caller owns", Tag: "ticketing",
 		Security: true, Roles: []string{"user"},
 		Responses: map[string]any{
-			"200": ticket, "401": openapi.Ref("Error"),
+			"200": openapi.Ref("Ticket"), "401": openapi.Ref("Error"),
 			"403": openapi.Ref("Error"), "404": openapi.Ref("Error"), "429": openapi.Ref("Error"),
 		},
 	})

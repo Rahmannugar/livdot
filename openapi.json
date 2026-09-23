@@ -1,6 +1,35 @@
 {
   "components": {
     "schemas": {
+      "AuthResult": {
+        "properties": {
+          "accountId": {
+            "example": "018f2c1e-6f2a-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "email": {
+            "example": "host@livdot.local",
+            "format": "email",
+            "type": "string"
+          },
+          "expiresAt": {
+            "example": "2026-09-24T18:00:00Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "token": {
+            "example": "9OxBfUR6ipBj04CHxoCHQoWZxn_-ahSio7kMGWYM4Hg",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "email",
+          "token",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
       "CreateEventRequest": {
         "properties": {
           "amountMinor": {
@@ -34,20 +63,397 @@
         ],
         "type": "object"
       },
+      "CrewPage": {
+        "properties": {
+          "crews": {
+            "items": {
+              "$ref": "#/components/schemas/CrewProfile"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "example": "eyJzIjoiQ3JldyBPbmUiLCJpIjoiMDE4ZjJjMWUtNmYyYS03YzNiLTlkNGUtMmI4YTFjNWY3ZTkwIn0",
+            "type": "string"
+          }
+        },
+        "required": [
+          "crews",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "CrewProfile": {
+        "properties": {
+          "accountId": {
+            "example": "018f2c1e-6f2a-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "availability": {
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "example": "available",
+            "type": "string"
+          },
+          "list": {
+            "example": [
+              "camera-op",
+              "audio-op",
+              "switcher"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "example": "Crew One",
+            "type": "string"
+          },
+          "updatedAt": {
+            "example": "2026-09-23T17:55:00Z",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "name",
+          "list",
+          "availability",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "CrewSignUpRequest": {
+        "properties": {
+          "crewName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "crewName",
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
       "Error": {
         "properties": {
           "error": {
             "properties": {
               "code": {
+                "example": "invalid_request",
                 "type": "string"
               },
               "message": {
+                "example": "event details are invalid",
                 "type": "string"
               }
             },
+            "required": [
+              "code",
+              "message"
+            ],
             "type": "object"
           }
         },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "Event": {
+        "properties": {
+          "amountMinor": {
+            "example": 500000,
+            "format": "int64",
+            "type": "integer"
+          },
+          "assignedCrew": {
+            "$ref": "#/components/schemas/EventCrew"
+          },
+          "assignedCrewId": {
+            "example": "018f2c1e-6f2a-7c3b-9d4e-2b8a1c5f7e90",
+            "nullable": true,
+            "type": "string"
+          },
+          "availableTickets": {
+            "example": 99,
+            "type": "integer"
+          },
+          "cancelledAt": {
+            "example": null,
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "example": "2026-09-23T17:50:00Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "durationSeconds": {
+            "example": 3600,
+            "type": "integer"
+          },
+          "endsAt": {
+            "example": "2026-12-01T19:00:00Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "hostId": {
+            "example": "018f2c1e-1111-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "id": {
+            "example": "018f2c1e-9a11-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "name": {
+            "example": "Live Show",
+            "type": "string"
+          },
+          "startsAt": {
+            "example": "2026-12-01T18:00:00Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "upcoming",
+              "live",
+              "ended",
+              "cancelled"
+            ],
+            "example": "upcoming",
+            "type": "string"
+          },
+          "totalTickets": {
+            "example": 100,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "example": "2026-09-23T17:50:00Z",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "hostId",
+          "name",
+          "amountMinor",
+          "durationSeconds",
+          "status",
+          "totalTickets",
+          "availableTickets",
+          "startsAt",
+          "endsAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "EventCrew": {
+        "properties": {
+          "accountId": {
+            "example": "018f2c1e-6f2a-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "availability": {
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "example": "available",
+            "type": "string"
+          },
+          "name": {
+            "example": "Crew One",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "name",
+          "availability"
+        ],
+        "type": "object"
+      },
+      "EventPage": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "example": "eyJzIjoiMjAyNi0xMi0wMVQxODowMDowMFoiLCJpIjoiMDE4ZjJjMWUtOWExMS03YzNiLTlkNGUtMmI4YTFjNWY3ZTkwIn0",
+            "type": "string"
+          }
+        },
+        "required": [
+          "events",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "HostSignUpRequest": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "fullName",
+          "password"
+        ],
+        "type": "object"
+      },
+      "Payout": {
+        "properties": {
+          "amountMinor": {
+            "example": 500000,
+            "format": "int64",
+            "type": "integer"
+          },
+          "eventId": {
+            "example": "018f2c1e-9a11-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "hostId": {
+            "example": "018f2c1e-1111-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "id": {
+            "example": "018f2c1e-ffff-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "paidAt": {
+            "example": "2026-12-01T19:01:00Z",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "providerPayoutId": {
+            "example": "mock_pyt_018f2c1e-ffff-7c3b-9d4e-2b8a1c5f7e90",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "processing",
+              "paid",
+              "failed"
+            ],
+            "example": "paid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventId",
+          "hostId",
+          "amountMinor",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PayoutPage": {
+        "properties": {
+          "nextCursor": {
+            "example": "",
+            "type": "string"
+          },
+          "payouts": {
+            "items": {
+              "$ref": "#/components/schemas/Payout"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "payouts",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "Purchase": {
+        "properties": {
+          "amountMinor": {
+            "example": 500000,
+            "format": "int64",
+            "type": "integer"
+          },
+          "checkoutUrl": {
+            "example": "https://mock.paystack.local/checkout/018f2c1e-aaaa-7c3b-9d4e-2b8a1c5f7e90",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "example": "2026-09-23T17:58:00Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "eventId": {
+            "example": "018f2c1e-9a11-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "id": {
+            "example": "018f2c1e-aaaa-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "paidAt": {
+            "example": null,
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "initiated",
+              "processing",
+              "paid",
+              "refunded",
+              "failed"
+            ],
+            "example": "initiated",
+            "type": "string"
+          },
+          "ticketId": {
+            "example": "018f2c1e-cccc-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "userId": {
+            "example": "018f2c1e-bbbb-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventId",
+          "userId",
+          "amountMinor",
+          "status",
+          "ticketId",
+          "createdAt"
+        ],
         "type": "object"
       },
       "PurchaseTicketRequest": {
@@ -58,6 +464,149 @@
         },
         "required": [
           "idempotencyKey"
+        ],
+        "type": "object"
+      },
+      "Refund": {
+        "properties": {
+          "amountMinor": {
+            "example": 500000,
+            "format": "int64",
+            "type": "integer"
+          },
+          "eventId": {
+            "example": "018f2c1e-9a11-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "id": {
+            "example": "018f2c1e-eeee-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "providerRefundId": {
+            "example": "mock_rfnd_018f2c1e-eeee-7c3b-9d4e-2b8a1c5f7e90",
+            "nullable": true,
+            "type": "string"
+          },
+          "purchaseId": {
+            "example": "018f2c1e-aaaa-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "refundedAt": {
+            "example": "2026-12-01T18:02:00Z",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "processing",
+              "refunded",
+              "failed"
+            ],
+            "example": "refunded",
+            "type": "string"
+          },
+          "userId": {
+            "example": "018f2c1e-bbbb-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventId",
+          "userId",
+          "purchaseId",
+          "amountMinor",
+          "status"
+        ],
+        "type": "object"
+      },
+      "RefundPage": {
+        "properties": {
+          "nextCursor": {
+            "example": "",
+            "type": "string"
+          },
+          "refunds": {
+            "items": {
+              "$ref": "#/components/schemas/Refund"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "refunds",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "SignInRequest": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "Stream": {
+        "properties": {
+          "eventId": {
+            "example": "018f2c1e-9a11-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "failedAt": {
+            "example": null,
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "failureReason": {
+            "example": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "finishedAt": {
+            "example": null,
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "example": "018f2c1e-dddd-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "roomId": {
+            "example": "livdot-018f2c1e-9a11-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "startedAt": {
+            "example": "2026-12-01T18:00:00Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "live",
+              "failed",
+              "ended"
+            ],
+            "example": "live",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventId",
+          "roomId",
+          "status",
+          "startedAt"
         ],
         "type": "object"
       },
@@ -72,6 +621,79 @@
         ],
         "type": "object"
       },
+      "StreamSession": {
+        "properties": {
+          "expiresAt": {
+            "example": "2026-12-01T18:15:00Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "room": {
+            "example": "livdot-018f2c1e-9a11-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "token": {
+            "example": "mock_lk_livdot-018f2c1e-9a11-7c3b_018f2c1e-bbbb",
+            "type": "string"
+          },
+          "url": {
+            "example": "https://mock.livekit.local/rooms/livdot-018f2c1e-9a11-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "room",
+          "url",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "Ticket": {
+        "properties": {
+          "eventId": {
+            "example": "018f2c1e-9a11-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "id": {
+            "example": "018f2c1e-cccc-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          },
+          "issuedAt": {
+            "example": "2026-09-23T18:01:00Z",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "reservationExpiresAt": {
+            "example": "2026-09-23T18:08:00Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "temporarily_reserved",
+              "reservation_expired",
+              "issued",
+              "revoked"
+            ],
+            "example": "issued",
+            "type": "string"
+          },
+          "userId": {
+            "example": "018f2c1e-bbbb-7c3b-9d4e-2b8a1c5f7e90",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventId",
+          "userId",
+          "status",
+          "reservationExpiresAt"
+        ],
+        "type": "object"
+      },
       "UpdateCrewProfileRequest": {
         "properties": {
           "availability": {
@@ -82,9 +704,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "list"
-        ],
         "type": "object"
       },
       "UpdateEventRequest": {
@@ -113,16 +732,10 @@
             "type": "integer"
           }
         },
-        "required": [
-          "assignedCrewId"
-        ],
         "type": "object"
       },
-      "signinCrewRequest": {
+      "UserSignUpRequest": {
         "properties": {
-          "crewName": {
-            "type": "string"
-          },
           "email": {
             "type": "string"
           },
@@ -134,145 +747,6 @@
           }
         },
         "required": [
-          "crewName",
-          "email",
-          "fullName",
-          "password"
-        ],
-        "type": "object"
-      },
-      "signinHostRequest": {
-        "properties": {
-          "crewName": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "fullName": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "crewName",
-          "email",
-          "fullName",
-          "password"
-        ],
-        "type": "object"
-      },
-      "signinInternalRequest": {
-        "properties": {
-          "crewName": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "fullName": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "crewName",
-          "email",
-          "fullName",
-          "password"
-        ],
-        "type": "object"
-      },
-      "signinUserRequest": {
-        "properties": {
-          "crewName": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "fullName": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "crewName",
-          "email",
-          "fullName",
-          "password"
-        ],
-        "type": "object"
-      },
-      "signupCrewRequest": {
-        "properties": {
-          "crewName": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "fullName": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "crewName",
-          "email",
-          "fullName",
-          "password"
-        ],
-        "type": "object"
-      },
-      "signupHostRequest": {
-        "properties": {
-          "crewName": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "fullName": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "crewName",
-          "email",
-          "fullName",
-          "password"
-        ],
-        "type": "object"
-      },
-      "signupUserRequest": {
-        "properties": {
-          "crewName": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "fullName": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "crewName",
           "email",
           "fullName",
           "password"
@@ -303,30 +777,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "accountId": {
-                      "type": "string"
-                    },
-                    "availability": {
-                      "enum": [
-                        "available",
-                        "unavailable"
-                      ],
-                      "type": "string"
-                    },
-                    "list": {
-                      "items": {},
-                      "type": "array"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/CrewProfile"
                 }
               }
             },
@@ -413,30 +864,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "accountId": {
-                      "type": "string"
-                    },
-                    "availability": {
-                      "enum": [
-                        "available",
-                        "unavailable"
-                      ],
-                      "type": "string"
-                    },
-                    "list": {
-                      "items": {},
-                      "type": "array"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/CrewProfile"
                 }
               }
             },
@@ -472,6 +900,16 @@
             },
             "description": "forbidden"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not found"
+          },
           "429": {
             "content": {
               "application/json": {
@@ -505,41 +943,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "crews": {
-                      "items": {
-                        "properties": {
-                          "accountId": {
-                            "type": "string"
-                          },
-                          "availability": {
-                            "enum": [
-                              "available",
-                              "unavailable"
-                            ],
-                            "type": "string"
-                          },
-                          "list": {
-                            "items": {},
-                            "type": "array"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "updatedAt": {
-                            "format": "date-time",
-                            "type": "string"
-                          }
-                        },
-                        "type": "object"
-                      },
-                      "type": "array"
-                    },
-                    "nextCursor": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/CrewPage"
                 }
               }
             },
@@ -608,83 +1012,41 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "events": {
-                      "items": {
-                        "properties": {
-                          "amountMinor": {
-                            "format": "int64",
-                            "type": "integer"
-                          },
-                          "assignedCrew": {
-                            "type": "object"
-                          },
-                          "assignedCrewId": {
-                            "nullable": true,
-                            "type": "string"
-                          },
-                          "availableTickets": {
-                            "type": "integer"
-                          },
-                          "cancelledAt": {
-                            "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
-                          },
-                          "createdAt": {
-                            "format": "date-time",
-                            "type": "string"
-                          },
-                          "durationSeconds": {
-                            "type": "integer"
-                          },
-                          "endsAt": {
-                            "format": "date-time",
-                            "type": "string"
-                          },
-                          "hostId": {
-                            "type": "string"
-                          },
-                          "id": {
-                            "type": "string"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "startsAt": {
-                            "format": "date-time",
-                            "type": "string"
-                          },
-                          "status": {
-                            "enum": [
-                              "upcoming",
-                              "live",
-                              "ended",
-                              "cancelled"
-                            ],
-                            "type": "string"
-                          },
-                          "totalTickets": {
-                            "type": "integer"
-                          },
-                          "updatedAt": {
-                            "format": "date-time",
-                            "type": "string"
-                          }
-                        },
-                        "type": "object"
-                      },
-                      "type": "array"
-                    },
-                    "nextCursor": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/EventPage"
                 }
               }
             },
             "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "forbidden"
           },
           "404": {
             "content": {
@@ -695,6 +1057,16 @@
               }
             },
             "description": "not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "conflict"
           },
           "429": {
             "content": {
@@ -729,68 +1101,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "amountMinor": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "assignedCrew": {
-                      "type": "object"
-                    },
-                    "assignedCrewId": {
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "availableTickets": {
-                      "type": "integer"
-                    },
-                    "cancelledAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "createdAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "durationSeconds": {
-                      "type": "integer"
-                    },
-                    "endsAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "hostId": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "startsAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "status": {
-                      "enum": [
-                        "upcoming",
-                        "live",
-                        "ended",
-                        "cancelled"
-                      ],
-                      "type": "string"
-                    },
-                    "totalTickets": {
-                      "type": "integer"
-                    },
-                    "updatedAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/Event"
                 }
               }
             },
@@ -805,6 +1116,16 @@
               }
             },
             "description": "invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "unauthenticated"
           },
           "403": {
             "content": {
@@ -859,72 +1180,41 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "amountMinor": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "assignedCrew": {
-                      "type": "object"
-                    },
-                    "assignedCrewId": {
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "availableTickets": {
-                      "type": "integer"
-                    },
-                    "cancelledAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "createdAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "durationSeconds": {
-                      "type": "integer"
-                    },
-                    "endsAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "hostId": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "startsAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "status": {
-                      "enum": [
-                        "upcoming",
-                        "live",
-                        "ended",
-                        "cancelled"
-                      ],
-                      "type": "string"
-                    },
-                    "totalTickets": {
-                      "type": "integer"
-                    },
-                    "updatedAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/EventPage"
                 }
               }
             },
             "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "forbidden"
           },
           "404": {
             "content": {
@@ -935,6 +1225,16 @@
               }
             },
             "description": "not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "conflict"
           },
           "429": {
             "content": {
@@ -979,68 +1279,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "amountMinor": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "assignedCrew": {
-                      "type": "object"
-                    },
-                    "assignedCrewId": {
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "availableTickets": {
-                      "type": "integer"
-                    },
-                    "cancelledAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "createdAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "durationSeconds": {
-                      "type": "integer"
-                    },
-                    "endsAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "hostId": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "startsAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "status": {
-                      "enum": [
-                        "upcoming",
-                        "live",
-                        "ended",
-                        "cancelled"
-                      ],
-                      "type": "string"
-                    },
-                    "totalTickets": {
-                      "type": "integer"
-                    },
-                    "updatedAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/Event"
                 }
               }
             },
@@ -1055,6 +1294,16 @@
               }
             },
             "description": "invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "unauthenticated"
           },
           "403": {
             "content": {
@@ -1129,44 +1378,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "eventId": {
-                      "type": "string"
-                    },
-                    "failedAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "failureReason": {
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "finishedAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "roomId": {
-                      "type": "string"
-                    },
-                    "startedAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "status": {
-                      "enum": [
-                        "live",
-                        "failed",
-                        "ended"
-                      ],
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/Stream"
                 }
               }
             },
@@ -1265,22 +1477,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "expiresAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "room": {
-                      "type": "string"
-                    },
-                    "token": {
-                      "type": "string"
-                    },
-                    "url": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/StreamSession"
                 }
               }
             },
@@ -1379,48 +1576,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "amountMinor": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "checkoutUrl": {
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "createdAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "eventId": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "paidAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "status": {
-                      "enum": [
-                        "initiated",
-                        "processing",
-                        "paid",
-                        "refunded",
-                        "failed"
-                      ],
-                      "type": "string"
-                    },
-                    "ticketId": {
-                      "type": "string"
-                    },
-                    "userId": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/Purchase"
                 }
               }
             },
@@ -1511,9 +1667,13 @@
                 "schema": {
                   "properties": {
                     "refunds": {
+                      "example": 12,
                       "type": "integer"
                     }
                   },
+                  "required": [
+                    "refunds"
+                  ],
                   "type": "object"
                 }
               }
@@ -1603,44 +1763,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "eventId": {
-                      "type": "string"
-                    },
-                    "failedAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "failureReason": {
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "finishedAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "roomId": {
-                      "type": "string"
-                    },
-                    "startedAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "status": {
-                      "enum": [
-                        "live",
-                        "failed",
-                        "ended"
-                      ],
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/Stream"
                 }
               }
             },
@@ -1749,44 +1872,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "eventId": {
-                      "type": "string"
-                    },
-                    "failedAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "failureReason": {
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "finishedAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "roomId": {
-                      "type": "string"
-                    },
-                    "startedAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "status": {
-                      "enum": [
-                        "live",
-                        "failed",
-                        "ended"
-                      ],
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/Stream"
                 }
               }
             },
@@ -1875,50 +1961,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "nextCursor": {
-                      "type": "string"
-                    },
-                    "payouts": {
-                      "items": {
-                        "properties": {
-                          "amountMinor": {
-                            "format": "int64",
-                            "type": "integer"
-                          },
-                          "eventId": {
-                            "type": "string"
-                          },
-                          "hostId": {
-                            "type": "string"
-                          },
-                          "id": {
-                            "type": "string"
-                          },
-                          "paidAt": {
-                            "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
-                          },
-                          "providerPayoutId": {
-                            "nullable": true,
-                            "type": "string"
-                          },
-                          "status": {
-                            "enum": [
-                              "processing",
-                              "paid",
-                              "failed"
-                            ],
-                            "type": "string"
-                          }
-                        },
-                        "type": "object"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/PayoutPage"
                 }
               }
             },
@@ -1998,39 +2041,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "amountMinor": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "eventId": {
-                      "type": "string"
-                    },
-                    "hostId": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "paidAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "providerPayoutId": {
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "status": {
-                      "enum": [
-                        "processing",
-                        "paid",
-                        "failed"
-                      ],
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/Payout"
                 }
               }
             },
@@ -2100,53 +2111,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "nextCursor": {
-                      "type": "string"
-                    },
-                    "refunds": {
-                      "items": {
-                        "properties": {
-                          "amountMinor": {
-                            "format": "int64",
-                            "type": "integer"
-                          },
-                          "eventId": {
-                            "type": "string"
-                          },
-                          "id": {
-                            "type": "string"
-                          },
-                          "providerRefundId": {
-                            "nullable": true,
-                            "type": "string"
-                          },
-                          "purchaseId": {
-                            "type": "string"
-                          },
-                          "refundedAt": {
-                            "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
-                          },
-                          "status": {
-                            "enum": [
-                              "processing",
-                              "refunded",
-                              "failed"
-                            ],
-                            "type": "string"
-                          },
-                          "userId": {
-                            "type": "string"
-                          }
-                        },
-                        "type": "object"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/RefundPage"
                 }
               }
             },
@@ -2226,42 +2191,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "amountMinor": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "eventId": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "providerRefundId": {
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "purchaseId": {
-                      "type": "string"
-                    },
-                    "refundedAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "status": {
-                      "enum": [
-                        "processing",
-                        "refunded",
-                        "failed"
-                      ],
-                      "type": "string"
-                    },
-                    "userId": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/Refund"
                 }
               }
             },
@@ -2330,7 +2260,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/signinCrewRequest"
+                "$ref": "#/components/schemas/SignInRequest"
               }
             }
           },
@@ -2341,22 +2271,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "accountId": {
-                      "type": "string"
-                    },
-                    "email": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "token": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthResult"
                 }
               }
             },
@@ -2382,16 +2297,6 @@
             },
             "description": "unauthenticated"
           },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "conflict"
-          },
           "429": {
             "content": {
               "application/json": {
@@ -2403,7 +2308,7 @@
             "description": "rate limited"
           }
         },
-        "summary": "Sign in an existing account",
+        "summary": "Sign in a crew",
         "tags": [
           "authentication"
         ]
@@ -2416,7 +2321,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/signinHostRequest"
+                "$ref": "#/components/schemas/SignInRequest"
               }
             }
           },
@@ -2427,22 +2332,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "accountId": {
-                      "type": "string"
-                    },
-                    "email": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "token": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthResult"
                 }
               }
             },
@@ -2468,16 +2358,6 @@
             },
             "description": "unauthenticated"
           },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "conflict"
-          },
           "429": {
             "content": {
               "application/json": {
@@ -2489,7 +2369,7 @@
             "description": "rate limited"
           }
         },
-        "summary": "Sign in an existing account",
+        "summary": "Sign in a host",
         "tags": [
           "authentication"
         ]
@@ -2502,7 +2382,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/signinInternalRequest"
+                "$ref": "#/components/schemas/SignInRequest"
               }
             }
           },
@@ -2513,22 +2393,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "accountId": {
-                      "type": "string"
-                    },
-                    "email": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "token": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthResult"
                 }
               }
             },
@@ -2554,16 +2419,6 @@
             },
             "description": "unauthenticated"
           },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "conflict"
-          },
           "429": {
             "content": {
               "application/json": {
@@ -2575,7 +2430,7 @@
             "description": "rate limited"
           }
         },
-        "summary": "Sign in an existing account",
+        "summary": "Sign in an internal administrator",
         "tags": [
           "authentication"
         ]
@@ -2588,7 +2443,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/signinUserRequest"
+                "$ref": "#/components/schemas/SignInRequest"
               }
             }
           },
@@ -2599,22 +2454,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "accountId": {
-                      "type": "string"
-                    },
-                    "email": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "token": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthResult"
                 }
               }
             },
@@ -2640,16 +2480,6 @@
             },
             "description": "unauthenticated"
           },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "conflict"
-          },
           "429": {
             "content": {
               "application/json": {
@@ -2661,7 +2491,7 @@
             "description": "rate limited"
           }
         },
-        "summary": "Sign in an existing account",
+        "summary": "Sign in a viewer",
         "tags": [
           "authentication"
         ]
@@ -2672,11 +2502,6 @@
         "operationId": "signout",
         "responses": {
           "204": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
             "description": "no content"
           },
           "401": {
@@ -2718,7 +2543,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/signupCrewRequest"
+                "$ref": "#/components/schemas/CrewSignUpRequest"
               }
             }
           },
@@ -2729,22 +2554,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "accountId": {
-                      "type": "string"
-                    },
-                    "email": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "token": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthResult"
                 }
               }
             },
@@ -2781,7 +2591,7 @@
             "description": "rate limited"
           }
         },
-        "summary": "Register a new account",
+        "summary": "Register a crew account",
         "tags": [
           "authentication"
         ]
@@ -2794,7 +2604,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/signupHostRequest"
+                "$ref": "#/components/schemas/HostSignUpRequest"
               }
             }
           },
@@ -2805,22 +2615,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "accountId": {
-                      "type": "string"
-                    },
-                    "email": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "token": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthResult"
                 }
               }
             },
@@ -2857,7 +2652,7 @@
             "description": "rate limited"
           }
         },
-        "summary": "Register a new account",
+        "summary": "Register a host account",
         "tags": [
           "authentication"
         ]
@@ -2870,7 +2665,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/signupUserRequest"
+                "$ref": "#/components/schemas/UserSignUpRequest"
               }
             }
           },
@@ -2881,22 +2676,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "accountId": {
-                      "type": "string"
-                    },
-                    "email": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "token": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthResult"
                 }
               }
             },
@@ -2933,7 +2713,7 @@
             "description": "rate limited"
           }
         },
-        "summary": "Register a new account",
+        "summary": "Register a viewer account",
         "tags": [
           "authentication"
         ]
@@ -2957,36 +2737,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "eventId": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "issuedAt": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
-                    "reservationExpiresAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "status": {
-                      "enum": [
-                        "temporarily_reserved",
-                        "reservation_expired",
-                        "issued",
-                        "revoked"
-                      ],
-                      "type": "string"
-                    },
-                    "userId": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/Ticket"
                 }
               }
             },
@@ -3057,9 +2808,13 @@
                 "schema": {
                   "properties": {
                     "status": {
+                      "example": "received",
                       "type": "string"
                     }
                   },
+                  "required": [
+                    "status"
+                  ],
                   "type": "object"
                 }
               }
@@ -3113,9 +2868,13 @@
                 "schema": {
                   "properties": {
                     "status": {
+                      "example": "ok",
                       "type": "string"
                     }
                   },
+                  "required": [
+                    "status"
+                  ],
                   "type": "object"
                 }
               }
@@ -3142,12 +2901,21 @@
                       "additionalProperties": {
                         "type": "string"
                       },
+                      "example": {
+                        "postgres": "ok",
+                        "redis": "ok"
+                      },
                       "type": "object"
                     },
                     "status": {
+                      "example": "ready",
                       "type": "string"
                     }
                   },
+                  "required": [
+                    "status",
+                    "dependencies"
+                  ],
                   "type": "object"
                 }
               }
@@ -3163,12 +2931,21 @@
                       "additionalProperties": {
                         "type": "string"
                       },
+                      "example": {
+                        "postgres": "ok",
+                        "redis": "ok"
+                      },
                       "type": "object"
                     },
                     "status": {
+                      "example": "ready",
                       "type": "string"
                     }
                   },
+                  "required": [
+                    "status",
+                    "dependencies"
+                  ],
                   "type": "object"
                 }
               }
