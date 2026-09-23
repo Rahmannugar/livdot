@@ -45,7 +45,7 @@ func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI, limiter *rate
 }
 
 type purchaseRequest struct {
-	IdempotencyKey string `json:"idempotencyKey" binding:"required"`
+	IdempotencyKey string `json:"idempotencyKey" binding:"required" example:"018f2c1e-aaaa-7c3b-9d4e-2b8a1c5f7e90" doc:"Client-supplied key; a replay returns the same intent"`
 }
 
 type purchaseResponse struct {

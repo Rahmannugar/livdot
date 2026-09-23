@@ -33,24 +33,36 @@
       "CreateEventRequest": {
         "properties": {
           "amountMinor": {
+            "description": "Ticket price in minor units",
+            "example": 500000,
             "format": "int64",
             "type": "integer"
           },
           "assignedCrewId": {
+            "description": "Crew organisation account",
+            "example": "018f2c1e-6f2a-7c3b-9d4e-2b8a1c5f7e90",
             "type": "string"
           },
           "durationSeconds": {
+            "description": "Scheduled duration in seconds",
+            "example": 3600,
             "format": "int64",
             "type": "integer"
           },
           "name": {
+            "description": "Event name",
+            "example": "Live Show",
             "type": "string"
           },
           "startsAt": {
+            "description": "Scheduled start; must be in the future",
+            "example": "2026-12-01T18:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "totalTickets": {
+            "description": "Tickets released for sale",
+            "example": 100,
             "format": "int64",
             "type": "integer"
           }
@@ -129,12 +141,19 @@
       "CrewSignUpRequest": {
         "properties": {
           "crewName": {
+            "description": "Crew organisation name",
+            "example": "Crew One",
             "type": "string"
           },
           "email": {
+            "description": "Account email address",
+            "example": "crew@livdot.local",
+            "format": "email",
             "type": "string"
           },
           "password": {
+            "description": "Account password",
+            "example": "password123",
             "type": "string"
           }
         },
@@ -319,12 +338,19 @@
       "HostSignUpRequest": {
         "properties": {
           "email": {
+            "description": "Account email address",
+            "example": "host@livdot.local",
+            "format": "email",
             "type": "string"
           },
           "fullName": {
+            "description": "Host display name",
+            "example": "Host One",
             "type": "string"
           },
           "password": {
+            "description": "Account password",
+            "example": "password123",
             "type": "string"
           }
         },
@@ -474,6 +500,8 @@
       "PurchaseTicketRequest": {
         "properties": {
           "idempotencyKey": {
+            "description": "Client-supplied key; a replay returns the same intent",
+            "example": "018f2c1e-aaaa-7c3b-9d4e-2b8a1c5f7e90",
             "type": "string"
           }
         },
@@ -558,9 +586,14 @@
       "SignInRequest": {
         "properties": {
           "email": {
+            "description": "Account email address",
+            "example": "host@livdot.local",
+            "format": "email",
             "type": "string"
           },
           "password": {
+            "description": "Account password",
+            "example": "password123",
             "type": "string"
           }
         },
@@ -573,9 +606,18 @@
       "SimulatePaymentRequest": {
         "properties": {
           "outcome": {
+            "description": "Simulated provider outcome",
+            "enum": [
+              "processing",
+              "paid",
+              "failed"
+            ],
+            "example": "paid",
             "type": "string"
           },
           "purchaseId": {
+            "description": "Purchase to settle",
+            "example": "018f2c1e-aaaa-7c3b-9d4e-2b8a1c5f7e90",
             "type": "string"
           }
         },
@@ -643,6 +685,8 @@
       "StreamFailureRequest": {
         "properties": {
           "reason": {
+            "description": "Why the stream failed",
+            "example": "encoder lost connection",
             "type": "string"
           }
         },
@@ -727,10 +771,21 @@
       "UpdateCrewProfileRequest": {
         "properties": {
           "availability": {
+            "description": "Whether the crew can take assignments",
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "example": "available",
             "type": "string"
           },
-          "list": {},
+          "list": {
+            "description": "Crew roster and equipment",
+            "example": "[]"
+          },
           "name": {
+            "description": "Crew organisation name",
+            "example": "Crew One",
             "type": "string"
           }
         },
@@ -739,25 +794,43 @@
       "UpdateEventRequest": {
         "properties": {
           "amountMinor": {
+            "description": "Ticket price in minor units",
+            "example": 500000,
             "format": "int64",
             "type": "integer"
           },
-          "assignedCrewId": {},
+          "assignedCrewId": {
+            "description": "Crew account; null clears the assignment",
+            "example": "018f2c1e-6f2a-7c3b-9d4e-2b8a1c5f7e90"
+          },
           "durationSeconds": {
+            "description": "Scheduled duration in seconds",
+            "example": 3600,
             "format": "int64",
             "type": "integer"
           },
           "name": {
+            "description": "Event name",
+            "example": "Live Show",
             "type": "string"
           },
           "startsAt": {
+            "description": "Scheduled start; must be in the future",
+            "example": "2026-12-01T18:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "status": {
+            "description": "Only cancelled is accepted",
+            "enum": [
+              "cancelled"
+            ],
+            "example": "cancelled",
             "type": "string"
           },
           "totalTickets": {
+            "description": "Tickets released for sale",
+            "example": 100,
             "format": "int64",
             "type": "integer"
           }
@@ -767,12 +840,19 @@
       "UserSignUpRequest": {
         "properties": {
           "email": {
+            "description": "Account email address",
+            "example": "user@livdot.local",
+            "format": "email",
             "type": "string"
           },
           "fullName": {
+            "description": "Viewer display name",
+            "example": "User One",
             "type": "string"
           },
           "password": {
+            "description": "Account password",
+            "example": "password123",
             "type": "string"
           }
         },

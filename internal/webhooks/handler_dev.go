@@ -11,8 +11,8 @@ import (
 
 // simulatePaymentRequest drives the development payment simulator.
 type simulatePaymentRequest struct {
-	PurchaseID string `json:"purchaseId" binding:"required"`
-	Outcome    string `json:"outcome" binding:"required"`
+	PurchaseID string `json:"purchaseId" binding:"required" example:"018f2c1e-aaaa-7c3b-9d4e-2b8a1c5f7e90" doc:"Purchase to settle"`
+	Outcome    string `json:"outcome" binding:"required" example:"paid" doc:"Simulated provider outcome" enums:"processing,paid,failed"`
 }
 
 // RegisterDevSimulator mounts a development-only endpoint that signs and

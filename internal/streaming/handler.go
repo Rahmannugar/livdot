@@ -69,7 +69,7 @@ type sessionResponse struct {
 }
 
 type failureRequest struct {
-	Reason string `json:"reason" binding:"required"`
+	Reason string `json:"reason" binding:"required" example:"encoder lost connection" doc:"Why the stream failed"`
 }
 
 func (handler *Handler) start(ctx *gin.Context) {

@@ -50,22 +50,22 @@ func RegisterRoutes(authenticated gin.IRoutes, service ServiceAPI, limiter *rate
 }
 
 type createEventRequest struct {
-	Name            string     `json:"name"`
-	AmountMinor     int64      `json:"amountMinor"`
-	DurationSeconds int32      `json:"durationSeconds"`
-	TotalTickets    int32      `json:"totalTickets"`
-	StartsAt        *time.Time `json:"startsAt"`
-	AssignedCrewID  *string    `json:"assignedCrewId"`
+	Name            string     `json:"name" example:"Live Show" doc:"Event name"`
+	AmountMinor     int64      `json:"amountMinor" example:"500000" doc:"Ticket price in minor units"`
+	DurationSeconds int32      `json:"durationSeconds" example:"3600" doc:"Scheduled duration in seconds"`
+	TotalTickets    int32      `json:"totalTickets" example:"100" doc:"Tickets released for sale"`
+	StartsAt        *time.Time `json:"startsAt" example:"2026-12-01T18:00:00Z" doc:"Scheduled start; must be in the future"`
+	AssignedCrewID  *string    `json:"assignedCrewId" example:"018f2c1e-6f2a-7c3b-9d4e-2b8a1c5f7e90" doc:"Crew organisation account"`
 }
 
 type updateEventRequest struct {
-	Name            *string         `json:"name"`
-	AmountMinor     *int64          `json:"amountMinor"`
-	DurationSeconds *int32          `json:"durationSeconds"`
-	TotalTickets    *int32          `json:"totalTickets"`
-	StartsAt        *time.Time      `json:"startsAt"`
-	AssignedCrewID  json.RawMessage `json:"assignedCrewId"`
-	Status          *string         `json:"status"`
+	Name            *string         `json:"name" example:"Live Show" doc:"Event name"`
+	AmountMinor     *int64          `json:"amountMinor" example:"500000" doc:"Ticket price in minor units"`
+	DurationSeconds *int32          `json:"durationSeconds" example:"3600" doc:"Scheduled duration in seconds"`
+	TotalTickets    *int32          `json:"totalTickets" example:"100" doc:"Tickets released for sale"`
+	StartsAt        *time.Time      `json:"startsAt" example:"2026-12-01T18:00:00Z" doc:"Scheduled start; must be in the future"`
+	AssignedCrewID  json.RawMessage `json:"assignedCrewId" example:"018f2c1e-6f2a-7c3b-9d4e-2b8a1c5f7e90" doc:"Crew account; null clears the assignment"`
+	Status          *string         `json:"status" example:"cancelled" doc:"Only cancelled is accepted" enums:"cancelled"`
 }
 
 type crewResponse struct {

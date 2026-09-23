@@ -73,28 +73,29 @@ func (handler *Handler) signout(ctx *gin.Context) {
 }
 
 // one request body per auth operation so binding and the generated contract
-// describe exactly the fields each endpoint accepts.
+// describe exactly the fields each endpoint accepts. The example and doc tags
+// feed the generated OpenAPI request schema.
 type signInRequest struct {
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Email    string `json:"email" binding:"required,email" format:"email" example:"host@livdot.local" doc:"Account email address"`
+	Password string `json:"password" binding:"required" example:"password123" doc:"Account password"`
 }
 
 type hostSignUpRequest struct {
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
-	FullName string `json:"fullName" binding:"required"`
+	Email    string `json:"email" binding:"required,email" format:"email" example:"host@livdot.local" doc:"Account email address"`
+	Password string `json:"password" binding:"required" example:"password123" doc:"Account password"`
+	FullName string `json:"fullName" binding:"required" example:"Host One" doc:"Host display name"`
 }
 
 type crewSignUpRequest struct {
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
-	CrewName string `json:"crewName" binding:"required"`
+	Email    string `json:"email" binding:"required,email" format:"email" example:"crew@livdot.local" doc:"Account email address"`
+	Password string `json:"password" binding:"required" example:"password123" doc:"Account password"`
+	CrewName string `json:"crewName" binding:"required" example:"Crew One" doc:"Crew organisation name"`
 }
 
 type userSignUpRequest struct {
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
-	FullName string `json:"fullName" binding:"required"`
+	Email    string `json:"email" binding:"required,email" format:"email" example:"user@livdot.local" doc:"Account email address"`
+	Password string `json:"password" binding:"required" example:"password123" doc:"Account password"`
+	FullName string `json:"fullName" binding:"required" example:"User One" doc:"Viewer display name"`
 }
 
 func (handler *Handler) signupHost(ctx *gin.Context) {

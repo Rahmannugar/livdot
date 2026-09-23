@@ -55,9 +55,9 @@ type profileResponse struct {
 }
 
 type updateProfileRequest struct {
-	Name         *string         `json:"name"`
-	List         json.RawMessage `json:"list"`
-	Availability *string         `json:"availability"`
+	Name         *string         `json:"name" example:"Crew One" doc:"Crew organisation name"`
+	List         json.RawMessage `json:"list" example:"[]" doc:"Crew roster and equipment"`
+	Availability *string         `json:"availability" example:"available" doc:"Whether the crew can take assignments" enums:"available,unavailable"`
 }
 
 func (handler *Handler) list(ctx *gin.Context) {

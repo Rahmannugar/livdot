@@ -86,6 +86,20 @@ tasks:
     cmds:
       - docker compose down
 
+  db-reset:
+    desc: Drop and recreate the local database and volume, then migrate
+    cmds:
+      - docker compose down -v
+      - docker compose run --rm migrate
+      - docker compose up -d
+      - echo "database reset; run task admin-create to add an internal admin"
+
+  nuke:
+    desc: Remove LIV DOT containers, images, and volumes
+    cmds:
+      - docker compose down --rmi local --volumes --remove-orphans
+      - docker image rm -f livdot-api livdot-worker livdot-migrate livdot-admin 2>/dev/null || true
+
   logs:
     desc: Follow local stack logs
     cmds:

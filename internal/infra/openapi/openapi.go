@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -208,7 +209,7 @@ func RequestSchema(sample any) map[string]any {
 		if name == "" {
 			continue
 		}
-		properties[name] = fieldSchema(field.Type)
+		properties[name] = fieldSchema(field)
 		if !optional && field.Type.Kind() != reflect.Ptr && field.Type != rawMessage {
 			required = append(required, name)
 		}
@@ -241,7 +242,62 @@ func jsonName(field reflect.StructField) (string, bool) {
 	return name, optional
 }
 
-func fieldSchema(field reflect.Type) map[string]any {
+// fieldSchema derives a property from the Go type and then layers on the docs a
+// struct tag can carry: example, doc, and format. The tags keep the request
+// schema generated from the one definition the handler binds.
+func fieldSchema(field reflect.StructField) map[string]any {
+	schema := typeSchema(field.Type)
+	if example := field.Tag.Get("example"); example != "" {
+		schema["example"] = exampleValue(field.Type, example)
+	}
+	if doc := field.Tag.Get("doc"); doc != "" {
+		schema["description"] = doc
+	}
+	if format := field.Tag.Get("format"); format != "" {
+		schema["format"] = format
+	}
+	if enums := field.Tag.Get("enums"); enums != "" {
+		schema["enum"] = splitComma(enums)
+	}
+	return schema
+}
+
+func splitComma(value string) []string {
+	var parts []string
+	start := 0
+	for index := 0; index <= len(value); index++ {
+		if index == len(value) || value[index] == ',' {
+			if part := value[start:index]; part != "" {
+				parts = append(parts, part)
+			}
+			start = index + 1
+		}
+	}
+	return parts
+}
+
+func exampleValue(field reflect.Type, example string) any {
+	for field.Kind() == reflect.Ptr {
+		field = field.Elem()
+	}
+	switch field.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if value, err := strconv.ParseInt(example, 10, 64); err == nil {
+			return value
+		}
+	case reflect.Float32, reflect.Float64:
+		if value, err := strconv.ParseFloat(example, 64); err == nil {
+			return value
+		}
+	case reflect.Bool:
+		if value, err := strconv.ParseBool(example); err == nil {
+			return value
+		}
+	}
+	return example
+}
+
+func typeSchema(field reflect.Type) map[string]any {
 	if field == reflect.TypeOf(json.RawMessage{}) {
 		return map[string]any{}
 	}
@@ -250,7 +306,7 @@ func fieldSchema(field reflect.Type) map[string]any {
 	}
 	switch field.Kind() {
 	case reflect.Ptr:
-		return fieldSchema(field.Elem())
+		return typeSchema(field.Elem())
 	case reflect.String:
 		return map[string]any{"type": "string"}
 	case reflect.Bool:
@@ -263,7 +319,7 @@ func fieldSchema(field reflect.Type) map[string]any {
 		if field.Elem().Kind() == reflect.Uint8 {
 			return map[string]any{}
 		}
-		return map[string]any{"type": "array", "items": fieldSchema(field.Elem())}
+		return map[string]any{"type": "array", "items": typeSchema(field.Elem())}
 	default:
 		return map[string]any{}
 	}
