@@ -90,6 +90,7 @@ type PurchaseForRefund struct {
 	AmountMinor       int64
 	Provider          string
 	ProviderPaymentID *string
+	AlreadyRefunded   bool
 }
 
 // resolves a recipient email so a receipt can be queued inside the transaction.
@@ -142,6 +143,7 @@ type PayoutPage struct {
 type Store interface {
 	CreateRefund(ctx context.Context, input RefundInput) (Refund, bool, error)
 	SettleRefund(ctx context.Context, refundID, providerRefundID, recipientEmail string) (Refund, error)
+	RefundByPurchaseID(ctx context.Context, purchaseID string) (Refund, error)
 	PaidPurchasesForEvent(ctx context.Context, eventID string) ([]PurchaseForRefund, error)
 	SumPaidPurchases(ctx context.Context, eventID string) (int64, error)
 	SumRefundedPurchases(ctx context.Context, eventID string) (int64, error)
@@ -154,6 +156,8 @@ type Store interface {
 	PayoutByID(ctx context.Context, id string) (Payout, error)
 	Payouts(ctx context.Context, filter PayoutFilter) ([]Payout, error)
 	RecordLedger(ctx context.Context, input LedgerInput) error
+	ClaimPendingRefunds(ctx context.Context, limit int32) ([]Refund, error)
+	PurchaseForRefund(ctx context.Context, purchaseID string) (PurchaseForRefund, error)
 }
 
 type Service struct {
@@ -209,7 +213,9 @@ func (service *Service) RefundExpiredPurchase(ctx context.Context, purchase tick
 
 // RefundEvent refunds every paid purchase on an event. CreateRefund is unique
 // per purchase, so repeated calls (auto trigger and admin review) never pay
-// twice. automatic records whether the 25% rule or an admin drove it.
+// twice. A refund already in processing (a prior settlement that failed) is
+// retried rather than skipped. automatic records whether the 25% rule or an
+// admin drove it.
 func (service *Service) RefundEvent(ctx context.Context, eventID string, automatic bool) (int, error) {
 	// an admin may only refund an event whose stream actually failed.
 	if !automatic {
@@ -227,6 +233,10 @@ func (service *Service) RefundEvent(ctx context.Context, eventID string, automat
 	}
 	refunded := 0
 	for _, purchase := range purchases {
+		// already fully refunded; nothing to do.
+		if purchase.AlreadyRefunded {
+			continue
+		}
 		refund, created, err := service.store.CreateRefund(ctx, RefundInput{
 			EventID:        eventID,
 			UserID:         purchase.UserID,
@@ -239,7 +249,16 @@ func (service *Service) RefundEvent(ctx context.Context, eventID string, automat
 			return refunded, err
 		}
 		if !created {
-			continue
+			// the row exists but is stuck in processing from a prior failed
+			// settlement; load it and retry the settlement.
+			existing, lookupErr := service.store.RefundByPurchaseID(ctx, purchase.PurchaseID)
+			if lookupErr != nil {
+				return refunded, lookupErr
+			}
+			if existing.Status != RefundProcessing {
+				continue
+			}
+			refund = existing
 		}
 		if err := service.settleRefund(ctx, refund, purchase.ProviderPaymentID, service.recipientEmail(ctx, purchase.UserID)); err != nil {
 			return refunded, err
@@ -248,6 +267,32 @@ func (service *Service) RefundEvent(ctx context.Context, eventID string, automat
 	}
 	slog.Info("event refunds processed", "event_id", eventID, "automatic", automatic, "count", refunded)
 	return refunded, nil
+}
+
+// ProcessPendingRefunds retries refunds stuck in processing (a settlement that
+// failed after the row was created). It is safe to run from multiple workers.
+func (service *Service) ProcessPendingRefunds(ctx context.Context, limit int32) (int, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	refunds, err := service.store.ClaimPendingRefunds(ctx, limit)
+	if err != nil {
+		return 0, err
+	}
+	processed := 0
+	for _, refund := range refunds {
+		purchase, err := service.store.PurchaseForRefund(ctx, refund.PurchaseID)
+		if err != nil {
+			slog.Warn("load purchase for pending refund", "refund_id", refund.ID, "error", err)
+			continue
+		}
+		if err := service.settleRefund(ctx, refund, purchase.ProviderPaymentID, service.recipientEmail(ctx, refund.UserID)); err != nil {
+			slog.Warn("settle pending refund", "refund_id", refund.ID, "error", err)
+			continue
+		}
+		processed++
+	}
+	return processed, nil
 }
 
 // AccruePayout pays the host the net of paid purchases minus completed refunds.

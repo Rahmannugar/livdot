@@ -39,6 +39,7 @@ const (
 type services struct {
 	ticketing     *ticketing.Service
 	notifications *notifications.Service
+	finance       *finance.Service
 }
 
 func main() {
@@ -109,7 +110,11 @@ func run(logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	handlers := &services{ticketing: ticketingService, notifications: notificationService}
+	handlers := &services{
+		ticketing:     ticketingService,
+		notifications: notificationService,
+		finance:       financeService,
+	}
 
 	// producers fire pg_notify when they queue an email; the listener drains the
 	// queue on wake, and the ticker is the fallback.
@@ -165,6 +170,11 @@ func runCycle(ctx context.Context, logger *slog.Logger, handlers *services) {
 		logger.Error("reservation expiry failed", "error", err)
 	} else if expired > 0 {
 		logger.Info("reservations expired", "count", expired)
+	}
+	if settled, err := handlers.finance.ProcessPendingRefunds(ctx, batchSize); err != nil {
+		logger.Error("pending refund settlement failed", "error", err)
+	} else if settled > 0 {
+		logger.Info("pending refunds settled", "count", settled)
 	}
 }
 

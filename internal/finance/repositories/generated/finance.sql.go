@@ -360,6 +360,35 @@ func (q *Queries) GetPayoutByID(ctx context.Context, id uuid.UUID) (EventPayout,
 	return i, err
 }
 
+const getPurchaseForRefund = `-- name: GetPurchaseForRefund :one
+SELECT id, event_id, user_id, amount_minor, provider, provider_payment_id
+FROM event_purchases
+WHERE id = $1
+`
+
+type GetPurchaseForRefundRow struct {
+	ID                uuid.UUID
+	EventID           uuid.UUID
+	UserID            uuid.UUID
+	AmountMinor       int64
+	Provider          string
+	ProviderPaymentID *string
+}
+
+func (q *Queries) GetPurchaseForRefund(ctx context.Context, id uuid.UUID) (GetPurchaseForRefundRow, error) {
+	row := q.db.QueryRow(ctx, getPurchaseForRefund, id)
+	var i GetPurchaseForRefundRow
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.AmountMinor,
+		&i.Provider,
+		&i.ProviderPaymentID,
+	)
+	return i, err
+}
+
 const getRefundByID = `-- name: GetRefundByID :one
 SELECT id, event_id, user_id, purchase_id, amount_minor, status, provider,
        provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
@@ -393,12 +422,46 @@ func (q *Queries) GetRefundByID(ctx context.Context, id uuid.UUID) (EventRefund,
 	return i, err
 }
 
+const getRefundByPurchaseID = `-- name: GetRefundByPurchaseID :one
+SELECT id, event_id, user_id, purchase_id, amount_minor, status, provider,
+       provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
+       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at
+FROM event_refunds
+WHERE purchase_id = $1
+`
+
+func (q *Queries) GetRefundByPurchaseID(ctx context.Context, purchaseID uuid.UUID) (EventRefund, error) {
+	row := q.db.QueryRow(ctx, getRefundByPurchaseID, purchaseID)
+	var i EventRefund
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.PurchaseID,
+		&i.AmountMinor,
+		&i.Status,
+		&i.Provider,
+		&i.ProviderRefundID,
+		&i.LinkedRefundID,
+		&i.IdempotencyKey,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LockedAt,
+		&i.LastError,
+		&i.ProcessedAt,
+		&i.RetriedAt,
+		&i.RefundedAt,
+	)
+	return i, err
+}
+
 const listPaidPurchasesForEvent = `-- name: ListPaidPurchasesForEvent :many
-SELECT id, event_id, user_id, amount_minor, provider, provider_payment_id
-FROM event_purchases
-WHERE event_id = $1
-  AND status = 'paid'
-ORDER BY id
+SELECT p.id, p.event_id, p.user_id, p.amount_minor, p.provider, p.provider_payment_id,
+       COALESCE((SELECT r.status = 'refunded' FROM event_refunds r WHERE r.purchase_id = p.id), false)::boolean AS already_refunded
+FROM event_purchases p
+WHERE p.event_id = $1
+  AND p.status = 'paid'
+ORDER BY p.id
 `
 
 type ListPaidPurchasesForEventRow struct {
@@ -408,6 +471,7 @@ type ListPaidPurchasesForEventRow struct {
 	AmountMinor       int64
 	Provider          string
 	ProviderPaymentID *string
+	AlreadyRefunded   bool
 }
 
 func (q *Queries) ListPaidPurchasesForEvent(ctx context.Context, eventID uuid.UUID) ([]ListPaidPurchasesForEventRow, error) {
@@ -426,6 +490,7 @@ func (q *Queries) ListPaidPurchasesForEvent(ctx context.Context, eventID uuid.UU
 			&i.AmountMinor,
 			&i.Provider,
 			&i.ProviderPaymentID,
+			&i.AlreadyRefunded,
 		); err != nil {
 			return nil, err
 		}

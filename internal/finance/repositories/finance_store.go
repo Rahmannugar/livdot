@@ -141,9 +141,61 @@ func (store *FinanceStore) PaidPurchasesForEvent(ctx context.Context, eventID st
 			AmountMinor:       record.AmountMinor,
 			Provider:          record.Provider,
 			ProviderPaymentID: record.ProviderPaymentID,
+			AlreadyRefunded:   record.AlreadyRefunded,
 		})
 	}
 	return purchases, nil
+}
+
+// RefundByPurchaseID returns the refund opened for a purchase, if any.
+func (store *FinanceStore) RefundByPurchaseID(ctx context.Context, purchaseID string) (finance.Refund, error) {
+	id, err := uuid.Parse(purchaseID)
+	if err != nil {
+		return finance.Refund{}, finance.ErrNotFound
+	}
+	record, err := financedb.New(store.pool).GetRefundByPurchaseID(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return finance.Refund{}, finance.ErrNotFound
+	}
+	if err != nil {
+		return finance.Refund{}, fmt.Errorf("get refund by purchase: %w", err)
+	}
+	return refundFromRecord(record), nil
+}
+
+// ClaimPendingRefunds locks and returns refunds ready for a settlement retry.
+func (store *FinanceStore) ClaimPendingRefunds(ctx context.Context, limit int32) ([]finance.Refund, error) {
+	records, err := financedb.New(store.pool).ClaimPendingRefunds(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("claim pending refunds: %w", err)
+	}
+	refunds := make([]finance.Refund, 0, len(records))
+	for _, record := range records {
+		refunds = append(refunds, refundFromRecord(record))
+	}
+	return refunds, nil
+}
+
+// PurchaseForRefund loads the payment facts a settlement retry needs.
+func (store *FinanceStore) PurchaseForRefund(ctx context.Context, purchaseID string) (finance.PurchaseForRefund, error) {
+	id, err := uuid.Parse(purchaseID)
+	if err != nil {
+		return finance.PurchaseForRefund{}, finance.ErrInvalidInput
+	}
+	record, err := financedb.New(store.pool).GetPurchaseForRefund(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return finance.PurchaseForRefund{}, finance.ErrNotFound
+	}
+	if err != nil {
+		return finance.PurchaseForRefund{}, fmt.Errorf("load purchase for refund: %w", err)
+	}
+	return finance.PurchaseForRefund{
+		PurchaseID:        record.ID.String(),
+		UserID:            record.UserID.String(),
+		AmountMinor:       record.AmountMinor,
+		Provider:          record.Provider,
+		ProviderPaymentID: record.ProviderPaymentID,
+	}, nil
 }
 
 func (store *FinanceStore) SumPaidPurchases(ctx context.Context, eventID string) (int64, error) {

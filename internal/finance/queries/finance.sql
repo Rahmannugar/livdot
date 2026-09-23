@@ -95,11 +95,12 @@ FROM events
 WHERE id = $1;
 
 -- name: ListPaidPurchasesForEvent :many
-SELECT id, event_id, user_id, amount_minor, provider, provider_payment_id
-FROM event_purchases
-WHERE event_id = $1
-  AND status = 'paid'
-ORDER BY id;
+SELECT p.id, p.event_id, p.user_id, p.amount_minor, p.provider, p.provider_payment_id,
+       COALESCE((SELECT r.status = 'refunded' FROM event_refunds r WHERE r.purchase_id = p.id), false)::boolean AS already_refunded
+FROM event_purchases p
+WHERE p.event_id = $1
+  AND p.status = 'paid'
+ORDER BY p.id;
 
 -- name: MarkPurchaseRefunded :one
 UPDATE event_purchases
@@ -121,6 +122,18 @@ WHERE event_id = $1 AND status = 'paid';
 SELECT COALESCE(SUM(amount_minor), 0)::bigint AS amount_minor
 FROM event_refunds
 WHERE event_id = $1 AND status = 'refunded';
+
+-- name: GetPurchaseForRefund :one
+SELECT id, event_id, user_id, amount_minor, provider, provider_payment_id
+FROM event_purchases
+WHERE id = $1;
+
+-- name: GetRefundByPurchaseID :one
+SELECT id, event_id, user_id, purchase_id, amount_minor, status, provider,
+       provider_refund_id, linked_refund_id, idempotency_key, attempt_count,
+       next_attempt_at, locked_at, last_error, processed_at, retried_at, refunded_at
+FROM event_refunds
+WHERE purchase_id = $1;
 
 -- name: GetRefundByID :one
 SELECT id, event_id, user_id, purchase_id, amount_minor, status, provider,
