@@ -37,7 +37,7 @@ idempotent and returns `204`.
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/events` |  | List events with `name`, `status`, `duration[gte|lte]`, `amount[gte|lte]`, `cursor`, `pageSize` |
-| GET | `/api/events/{id}` |  | Event detail; `purchased` reflects the caller's own access |
+| GET | `/api/events/{id}` |  | Event detail; `purchased` appears for viewers only |
 | POST | `/api/events` | host | Create an event, optionally assigning a crew |
 | PATCH | `/api/events/{id}` | host | Update an event, reassign the crew, or cancel with `status=cancelled` |
 

@@ -90,7 +90,7 @@ type eventResponse struct {
 	CancelledAt      *time.Time    `json:"cancelledAt"`
 	CreatedAt        time.Time     `json:"createdAt"`
 	UpdatedAt        time.Time     `json:"updatedAt"`
-	Purchased        bool          `json:"purchased"`
+	Purchased        *bool         `json:"purchased,omitempty"`
 }
 
 func (handler *Handler) create(ctx *gin.Context) {
@@ -122,7 +122,7 @@ func (handler *Handler) create(ctx *gin.Context) {
 		writeEventError(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusCreated, newEventResponse(event))
+	ctx.JSON(http.StatusCreated, newEventResponse(event, false))
 }
 
 func (handler *Handler) list(ctx *gin.Context) {
@@ -132,26 +132,37 @@ func (handler *Handler) list(ctx *gin.Context) {
 		return
 	}
 	identity, _ := authentication.IdentityFrom(ctx)
-	page, err := handler.service.List(ctx.Request.Context(), identity.AccountID, filter)
+	// only a viewer holds purchase access, so only a viewer sees the field.
+	viewer := identity.Role == authentication.RoleUser
+	accountID := ""
+	if viewer {
+		accountID = identity.AccountID
+	}
+	page, err := handler.service.List(ctx.Request.Context(), accountID, filter)
 	if err != nil {
 		writeEventError(ctx, err)
 		return
 	}
 	response := make([]eventResponse, 0, len(page.Events))
 	for _, event := range page.Events {
-		response = append(response, newEventResponse(event))
+		response = append(response, newEventResponse(event, viewer))
 	}
 	ctx.JSON(http.StatusOK, gin.H{"events": response, "nextCursor": page.NextCursor})
 }
 
 func (handler *Handler) detail(ctx *gin.Context) {
 	identity, _ := authentication.IdentityFrom(ctx)
-	event, err := handler.service.Detail(ctx.Request.Context(), identity.AccountID, ctx.Param("id"))
+	viewer := identity.Role == authentication.RoleUser
+	accountID := ""
+	if viewer {
+		accountID = identity.AccountID
+	}
+	event, err := handler.service.Detail(ctx.Request.Context(), accountID, ctx.Param("id"))
 	if err != nil {
 		writeEventError(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, newEventResponse(event))
+	ctx.JSON(http.StatusOK, newEventResponse(event, viewer))
 }
 
 func (handler *Handler) update(ctx *gin.Context) {
@@ -200,7 +211,7 @@ func (handler *Handler) update(ctx *gin.Context) {
 		writeEventError(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, newEventResponse(event))
+	ctx.JSON(http.StatusOK, newEventResponse(event, false))
 }
 
 func parseEventFilter(ctx *gin.Context) (Filter, error) {
@@ -250,7 +261,7 @@ func parseEventFilter(ctx *gin.Context) (Filter, error) {
 	return filter, nil
 }
 
-func newEventResponse(event Event) eventResponse {
+func newEventResponse(event Event, viewer bool) eventResponse {
 	response := eventResponse{
 		ID:               event.ID,
 		HostID:           event.HostID,
@@ -266,7 +277,10 @@ func newEventResponse(event Event) eventResponse {
 		CancelledAt:      event.CancelledAt,
 		CreatedAt:        event.CreatedAt,
 		UpdatedAt:        event.UpdatedAt,
-		Purchased:        event.Purchased,
+	}
+	if viewer {
+		purchased := event.Purchased
+		response.Purchased = &purchased
 	}
 	if event.AssignedCrew != nil {
 		response.AssignedCrew = &crewResponse{

@@ -14,6 +14,13 @@ import (
 
 const requestIDContextKey = "livdot.http.request_id"
 
+// probeRoutes are hit by the container healthcheck and by an orchestrator. A
+// successful probe is not an outcome worth a log line; a failing one is.
+var probeRoutes = map[string]struct{}{
+	"/health/live":  {},
+	"/health/ready": {},
+}
+
 type errorResponse struct {
 	Error errorBody `json:"error"`
 }
@@ -39,14 +46,23 @@ func RequestLogger(logger *slog.Logger) gin.HandlerFunc {
 		if route == "" {
 			route = "unmatched"
 		}
+		status := ctx.Writer.Status()
+		internalError := ctx.Errors.ByType(gin.ErrorTypePrivate).Last()
+		// suppress successful probes so they do not bury real traffic; a broken
+		// dependency still logs through the error path below.
+		if internalError == nil && status < 400 {
+			if _, probe := probeRoutes[route]; probe {
+				return
+			}
+		}
 		attributes := []any{
 			"request_id", requestID,
 			"method", ctx.Request.Method,
 			"route", route,
-			"status", ctx.Writer.Status(),
+			"status", status,
 			"duration_ms", time.Since(startedAt).Milliseconds(),
 		}
-		if internalError := ctx.Errors.ByType(gin.ErrorTypePrivate).Last(); internalError != nil {
+		if internalError != nil {
 			attributes = append(attributes, "error", internalError.Err)
 			logger.Error("http request completed", attributes...)
 			return

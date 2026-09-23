@@ -245,7 +245,7 @@
             "type": "string"
           },
           "purchased": {
-            "description": "Whether the requesting account holds paid access",
+            "description": "Viewer only: whether the account holds paid access",
             "example": false,
             "type": "boolean"
           },
