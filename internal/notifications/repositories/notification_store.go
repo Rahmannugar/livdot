@@ -69,8 +69,8 @@ func (store *NotificationStore) MarkFailed(ctx context.Context, id, reason strin
 
 func notification(record notificationsdb.EmailNotification) notifications.Notification {
 	var accountID *string
-	if record.RecipientUserID.Valid {
-		value := uuid.UUID(record.RecipientUserID.Bytes).String()
+	if record.RecipientAccountID.Valid {
+		value := uuid.UUID(record.RecipientAccountID.Bytes).String()
 		accountID = &value
 	}
 	return notifications.Notification{

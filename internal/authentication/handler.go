@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/authlier/emailpassword"
+	"github.com/Rahmannugar/livdot/internal/infra/httpapi"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	"github.com/gin-gonic/gin"
 )
@@ -197,5 +198,5 @@ func writeAuthError(ctx *gin.Context, err error) {
 		code = "invalid_role"
 		message = "invalid authentication role"
 	}
-	ctx.JSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
+	httpapi.WriteError(ctx, err, status, code, message, "")
 }

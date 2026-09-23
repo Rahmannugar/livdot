@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
+	"github.com/Rahmannugar/livdot/internal/infra/httpapi"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
+	"github.com/Rahmannugar/livdot/internal/validation"
 	"github.com/gin-gonic/gin"
 )
 
@@ -98,7 +100,8 @@ func (handler *Handler) create(ctx *gin.Context) {
 	}
 	var request createEventRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		writeEventError(ctx, ErrInvalidInput)
+		writeEventError(ctx, validation.New(ErrInvalidInput, "body",
+			"request body must be valid JSON with the documented field types"))
 		return
 	}
 
@@ -122,9 +125,9 @@ func (handler *Handler) create(ctx *gin.Context) {
 }
 
 func (handler *Handler) list(ctx *gin.Context) {
-	filter, ok := parseEventFilter(ctx)
-	if !ok {
-		writeEventError(ctx, ErrInvalidInput)
+	filter, err := parseEventFilter(ctx)
+	if err != nil {
+		writeEventError(ctx, err)
 		return
 	}
 	page, err := handler.service.List(ctx.Request.Context(), filter)
@@ -156,7 +159,8 @@ func (handler *Handler) update(ctx *gin.Context) {
 	}
 	var request updateEventRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		writeEventError(ctx, ErrInvalidInput)
+		writeEventError(ctx, validation.New(ErrInvalidInput, "body",
+			"request body must be valid JSON with the documented field types"))
 		return
 	}
 
@@ -169,7 +173,8 @@ func (handler *Handler) update(ctx *gin.Context) {
 	}
 	if request.Status != nil {
 		if *request.Status != string(StatusCancelled) {
-			writeEventError(ctx, ErrInvalidInput)
+			writeEventError(ctx, validation.New(ErrInvalidInput, "status",
+				"status may only be set to cancelled"))
 			return
 		}
 		input.Cancel = true
@@ -179,7 +184,8 @@ func (handler *Handler) update(ctx *gin.Context) {
 		if trimmed := bytes.TrimSpace(request.AssignedCrewID); string(trimmed) != "null" {
 			var crewID string
 			if err := json.Unmarshal(trimmed, &crewID); err != nil || crewID == "" {
-				writeEventError(ctx, ErrInvalidInput)
+				writeEventError(ctx, validation.New(ErrInvalidInput, "assignedCrewId",
+					"assignedCrewId must be a non-empty UUID or null"))
 				return
 			}
 			input.AssignedCrewID = &crewID
@@ -194,7 +200,7 @@ func (handler *Handler) update(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, newEventResponse(event))
 }
 
-func parseEventFilter(ctx *gin.Context) (Filter, bool) {
+func parseEventFilter(ctx *gin.Context) (Filter, error) {
 	var filter Filter
 	if name := ctx.Query("name"); name != "" {
 		filter.Name = &name
@@ -203,30 +209,30 @@ func parseEventFilter(ctx *gin.Context) (Filter, bool) {
 		parsed := Status(status)
 		filter.Status = &parsed
 	}
-	durationGte, ok := optionalInt32(ctx, "duration[gte]")
-	if !ok {
-		return Filter{}, false
+	durationGte, err := optionalInt32(ctx, "duration[gte]")
+	if err != nil {
+		return Filter{}, err
 	}
-	durationLte, ok := optionalInt32(ctx, "duration[lte]")
-	if !ok {
-		return Filter{}, false
+	durationLte, err := optionalInt32(ctx, "duration[lte]")
+	if err != nil {
+		return Filter{}, err
 	}
-	amountGte, ok := optionalInt64(ctx, "amount[gte]")
-	if !ok {
-		return Filter{}, false
+	amountGte, err := optionalInt64(ctx, "amount[gte]")
+	if err != nil {
+		return Filter{}, err
 	}
-	amountLte, ok := optionalInt64(ctx, "amount[lte]")
-	if !ok {
-		return Filter{}, false
+	amountLte, err := optionalInt64(ctx, "amount[lte]")
+	if err != nil {
+		return Filter{}, err
 	}
-	pageSize, ok := optionalInt32(ctx, "pageSize")
-	if !ok {
-		return Filter{}, false
+	pageSize, err := optionalInt32(ctx, "pageSize")
+	if err != nil {
+		return Filter{}, err
 	}
 	if raw := ctx.Query("cursor"); raw != "" {
 		cursor, err := DecodeCursor(raw)
 		if err != nil {
-			return Filter{}, false
+			return Filter{}, err
 		}
 		filter.Cursor = cursor
 	}
@@ -238,7 +244,7 @@ func parseEventFilter(ctx *gin.Context) (Filter, bool) {
 	if pageSize != nil {
 		filter.PageSize = *pageSize
 	}
-	return filter, true
+	return filter, nil
 }
 
 func newEventResponse(event Event) eventResponse {
@@ -268,35 +274,36 @@ func newEventResponse(event Event) eventResponse {
 	return response
 }
 
-func optionalInt32(ctx *gin.Context, key string) (*int32, bool) {
+func optionalInt32(ctx *gin.Context, key string) (*int32, error) {
 	raw := ctx.Query(key)
 	if raw == "" {
-		return nil, true
+		return nil, nil
 	}
 	value, err := strconv.ParseInt(raw, 10, 32)
 	if err != nil {
-		return nil, false
+		return nil, validation.New(ErrInvalidInput, key, key+" must be a valid integer")
 	}
 	parsed := int32(value)
-	return &parsed, true
+	return &parsed, nil
 }
 
-func optionalInt64(ctx *gin.Context, key string) (*int64, bool) {
+func optionalInt64(ctx *gin.Context, key string) (*int64, error) {
 	raw := ctx.Query(key)
 	if raw == "" {
-		return nil, true
+		return nil, nil
 	}
 	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
-		return nil, false
+		return nil, validation.New(ErrInvalidInput, key, key+" must be a valid integer")
 	}
-	return &value, true
+	return &value, nil
 }
 
 func writeEventError(ctx *gin.Context, err error) {
 	status := http.StatusInternalServerError
 	code := "events_unavailable"
 	message := "the event request could not be completed"
+	field := ""
 	switch {
 	case errors.Is(err, authentication.ErrUnauthenticated):
 		status = http.StatusUnauthorized
@@ -306,6 +313,10 @@ func writeEventError(ctx *gin.Context, err error) {
 		status = http.StatusBadRequest
 		code = "invalid_request"
 		message = "event details are invalid"
+		if safeField, safeMessage, ok := validation.Details(err); ok {
+			field = safeField
+			message = safeMessage
+		}
 	case errors.Is(err, ErrNotFound):
 		status = http.StatusNotFound
 		code = "event_not_found"
@@ -322,5 +333,5 @@ func writeEventError(ctx *gin.Context, err error) {
 		code = "event_conflict"
 		message = "the event cannot be changed in its current state"
 	}
-	ctx.JSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
+	httpapi.WriteError(ctx, err, status, code, message, field)
 }

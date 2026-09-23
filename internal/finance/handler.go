@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
+	"github.com/Rahmannugar/livdot/internal/infra/httpapi"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
+	"github.com/Rahmannugar/livdot/internal/validation"
 	"github.com/gin-gonic/gin"
 )
 
@@ -101,7 +103,8 @@ func (handler *Handler) listRefunds(ctx *gin.Context) {
 	}
 	pageSize, err := optionalInt32(ctx, "pageSize")
 	if err != nil {
-		writeFinanceError(ctx, ErrInvalidInput)
+		writeFinanceError(ctx, validation.New(ErrInvalidInput, "pageSize",
+			"pageSize must be a valid integer"))
 		return
 	}
 	if pageSize != nil {
@@ -152,7 +155,8 @@ func (handler *Handler) listPayouts(ctx *gin.Context) {
 	}
 	pageSize, err := optionalInt32(ctx, "pageSize")
 	if err != nil {
-		writeFinanceError(ctx, ErrInvalidInput)
+		writeFinanceError(ctx, validation.New(ErrInvalidInput, "pageSize",
+			"pageSize must be a valid integer"))
 		return
 	}
 	if pageSize != nil {
@@ -238,6 +242,7 @@ func writeFinanceError(ctx *gin.Context, err error) {
 	status := http.StatusInternalServerError
 	code := "finance_unavailable"
 	message := "the finance request could not be completed"
+	field := ""
 	switch {
 	case errors.Is(err, authentication.ErrUnauthenticated):
 		status = http.StatusUnauthorized
@@ -247,6 +252,10 @@ func writeFinanceError(ctx *gin.Context, err error) {
 		status = http.StatusBadRequest
 		code = "invalid_request"
 		message = "the finance request is invalid"
+		if safeField, safeMessage, ok := validation.Details(err); ok {
+			field = safeField
+			message = safeMessage
+		}
 	case errors.Is(err, ErrNotFound):
 		status = http.StatusNotFound
 		code = "not_found"
@@ -260,5 +269,5 @@ func writeFinanceError(ctx *gin.Context, err error) {
 		code = "not_refundable"
 		message = "only an event with a failed stream can be refunded"
 	}
-	ctx.JSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
+	httpapi.WriteError(ctx, err, status, code, message, field)
 }

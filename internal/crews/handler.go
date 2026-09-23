@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
+	"github.com/Rahmannugar/livdot/internal/infra/httpapi"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
+	"github.com/Rahmannugar/livdot/internal/validation"
 	"github.com/gin-gonic/gin"
 )
 
@@ -67,14 +69,15 @@ func (handler *Handler) list(ctx *gin.Context) {
 	if raw := ctx.Query("cursor"); raw != "" {
 		cursor, err := DecodeCursor(raw)
 		if err != nil {
-			writeCrewError(ctx, ErrInvalidInput)
+			writeCrewError(ctx, err)
 			return
 		}
 		filter.Cursor = cursor
 	}
 	pageSize, err := optionalInt32(ctx, "pageSize")
 	if err != nil {
-		writeCrewError(ctx, ErrInvalidInput)
+		writeCrewError(ctx, validation.New(ErrInvalidInput, "pageSize",
+			"pageSize must be a valid integer"))
 		return
 	}
 	if pageSize != nil {
@@ -115,7 +118,8 @@ func (handler *Handler) update(ctx *gin.Context) {
 	}
 	var request updateProfileRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		writeCrewError(ctx, ErrInvalidInput)
+		writeCrewError(ctx, validation.New(ErrInvalidInput, "body",
+			"request body must be valid JSON with the documented field types"))
 		return
 	}
 
@@ -159,6 +163,7 @@ func writeCrewError(ctx *gin.Context, err error) {
 	status := http.StatusInternalServerError
 	code := "crews_unavailable"
 	message := "the crew request could not be completed"
+	field := ""
 	switch {
 	case errors.Is(err, authentication.ErrUnauthenticated):
 		status = http.StatusUnauthorized
@@ -168,10 +173,14 @@ func writeCrewError(ctx *gin.Context, err error) {
 		status = http.StatusBadRequest
 		code = "invalid_request"
 		message = "crew details are invalid"
+		if safeField, safeMessage, ok := validation.Details(err); ok {
+			field = safeField
+			message = safeMessage
+		}
 	case errors.Is(err, ErrNotFound):
 		status = http.StatusNotFound
 		code = "crew_not_found"
 		message = "no crew exists for this account"
 	}
-	ctx.JSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
+	httpapi.WriteError(ctx, err, status, code, message, field)
 }

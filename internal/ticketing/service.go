@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
+	"github.com/Rahmannugar/livdot/internal/validation"
 	"github.com/google/uuid"
 )
 
@@ -172,13 +173,13 @@ func (service *Service) Purchase(
 ) (Purchase, error) {
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	if idempotencyKey == "" {
-		return Purchase{}, ErrInvalidInput
+		return Purchase{}, validation.New(ErrInvalidInput, "idempotencyKey", "idempotencyKey is required")
 	}
 	if _, err := uuid.Parse(userID); err != nil {
 		return Purchase{}, ErrInvalidInput
 	}
 	if _, err := uuid.Parse(eventID); err != nil {
-		return Purchase{}, ErrInvalidInput
+		return Purchase{}, validation.New(ErrInvalidInput, "eventId", "eventId must be a valid UUID")
 	}
 
 	// a replayed key returns the existing intent instead of a second charge.
@@ -249,7 +250,7 @@ func (service *Service) Purchase(
 // Ticket returns a ticket the caller owns.
 func (service *Service) Ticket(ctx context.Context, userID, ticketID string) (Ticket, error) {
 	if _, err := uuid.Parse(ticketID); err != nil {
-		return Ticket{}, ErrInvalidInput
+		return Ticket{}, validation.New(ErrInvalidInput, "ticketId", "ticketId must be a valid UUID")
 	}
 	ticket, err := service.store.TicketByID(ctx, ticketID)
 	if err != nil {

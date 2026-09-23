@@ -6,14 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	streamprovider "github.com/Rahmannugar/livdot/internal/infra/streaming"
+	"github.com/Rahmannugar/livdot/internal/validation"
 )
 
 // failures in the first quarter(25%) of the scheduled duration auto-refund; later
 // ones need admin review.
 const refundThresholdDivisor = 4
+
+const maxFailureReasonRunes = 1000
 
 const (
 	EventUpcoming = "upcoming"
@@ -175,6 +180,13 @@ func (service *Service) End(ctx context.Context, hostID, eventID string) (Stream
 // Fail records the failure and decides refund versus admin review. A failure
 // in the first quarter of the scheduled duration refunds everyone automatically.
 func (service *Service) Fail(ctx context.Context, hostID, eventID, reason string) (Stream, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return Stream{}, validation.New(ErrInvalidInput, "reason", "reason is required")
+	}
+	if utf8.RuneCountInString(reason) > maxFailureReasonRunes {
+		return Stream{}, validation.New(ErrInvalidInput, "reason", "reason must be 1000 characters or fewer")
+	}
 	event, err := service.store.Event(ctx, eventID)
 	if err != nil {
 		return Stream{}, err

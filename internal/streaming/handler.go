@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
+	"github.com/Rahmannugar/livdot/internal/infra/httpapi"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
+	"github.com/Rahmannugar/livdot/internal/validation"
 	"github.com/gin-gonic/gin"
 )
 
@@ -106,7 +108,7 @@ func (handler *Handler) fail(ctx *gin.Context) {
 	}
 	var request failureRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		writeStreamError(ctx, ErrInvalidInput)
+		writeStreamError(ctx, validation.New(ErrInvalidInput, "reason", "reason is required"))
 		return
 	}
 	stream, err := handler.service.Fail(
@@ -154,6 +156,7 @@ func writeStreamError(ctx *gin.Context, err error) {
 	status := http.StatusInternalServerError
 	code := "streaming_unavailable"
 	message := "the streaming request could not be completed"
+	field := ""
 	switch {
 	case errors.Is(err, authentication.ErrUnauthenticated):
 		status = http.StatusUnauthorized
@@ -163,6 +166,10 @@ func writeStreamError(ctx *gin.Context, err error) {
 		status = http.StatusBadRequest
 		code = "invalid_request"
 		message = "the streaming request is invalid"
+		if safeField, safeMessage, ok := validation.Details(err); ok {
+			field = safeField
+			message = safeMessage
+		}
 	case errors.Is(err, ErrNotFound):
 		status = http.StatusNotFound
 		code = "not_found"
@@ -180,5 +187,5 @@ func writeStreamError(ctx *gin.Context, err error) {
 		code = "stream_conflict"
 		message = "the stream cannot change in the event's current state"
 	}
-	ctx.JSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
+	httpapi.WriteError(ctx, err, status, code, message, field)
 }

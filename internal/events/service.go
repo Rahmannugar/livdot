@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Rahmannugar/livdot/internal/infra/pagination"
+	"github.com/Rahmannugar/livdot/internal/validation"
 	"github.com/google/uuid"
 )
 
@@ -198,28 +199,36 @@ func (service *Service) Create(ctx context.Context, hostID string, input CreateI
 
 func (service *Service) List(ctx context.Context, filter Filter) (Page, error) {
 	if filter.Status != nil && !filter.Status.Valid() {
-		return Page{}, ErrInvalidInput
+		return Page{}, validation.New(ErrInvalidInput, "status",
+			"status must be upcoming, live, ended, or cancelled")
 	}
 	if filter.DurationGte != nil && *filter.DurationGte <= 0 {
-		return Page{}, ErrInvalidInput
+		return Page{}, validation.New(ErrInvalidInput, "duration[gte]",
+			"duration[gte] must be greater than zero")
 	}
 	if filter.DurationLte != nil && *filter.DurationLte <= 0 {
-		return Page{}, ErrInvalidInput
+		return Page{}, validation.New(ErrInvalidInput, "duration[lte]",
+			"duration[lte] must be greater than zero")
 	}
 	if filter.AmountGte != nil && *filter.AmountGte < 0 {
-		return Page{}, ErrInvalidInput
+		return Page{}, validation.New(ErrInvalidInput, "amount[gte]",
+			"amount[gte] must be zero or greater")
 	}
 	if filter.AmountLte != nil && *filter.AmountLte < 0 {
-		return Page{}, ErrInvalidInput
+		return Page{}, validation.New(ErrInvalidInput, "amount[lte]",
+			"amount[lte] must be zero or greater")
 	}
 	if filter.DurationGte != nil && filter.DurationLte != nil && *filter.DurationGte > *filter.DurationLte {
-		return Page{}, ErrInvalidInput
+		return Page{}, validation.New(ErrInvalidInput, "duration",
+			"duration[gte] must not exceed duration[lte]")
 	}
 	if filter.AmountGte != nil && filter.AmountLte != nil && *filter.AmountGte > *filter.AmountLte {
-		return Page{}, ErrInvalidInput
+		return Page{}, validation.New(ErrInvalidInput, "amount",
+			"amount[gte] must not exceed amount[lte]")
 	}
 	if filter.Name != nil && utf8.RuneCountInString(*filter.Name) > maxEventNameRunes {
-		return Page{}, ErrInvalidInput
+		return Page{}, validation.New(ErrInvalidInput, "name",
+			"name must be 200 characters or fewer")
 	}
 	if filter.PageSize <= 0 {
 		filter.PageSize = defaultListLimit
@@ -330,7 +339,8 @@ func (service *Service) ensureCrew(ctx context.Context, crewID string) error {
 		return fmt.Errorf("check assigned crew: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("%w: assigned crew does not exist", ErrInvalidInput)
+		return validation.New(ErrInvalidInput, "assignedCrewId",
+			"assignedCrewId must identify an existing crew account")
 	}
 	return nil
 }
@@ -353,19 +363,22 @@ func validateSchedule(
 	now time.Time,
 ) error {
 	if name == "" || utf8.RuneCountInString(name) > maxEventNameRunes {
-		return ErrInvalidInput
+		if name == "" {
+			return validation.New(ErrInvalidInput, "name", "name is required")
+		}
+		return validation.New(ErrInvalidInput, "name", "name must be 200 characters or fewer")
 	}
 	if amountMinor < 0 {
-		return ErrInvalidInput
+		return validation.New(ErrInvalidInput, "amountMinor", "amountMinor must be zero or greater")
 	}
 	if durationSeconds <= 0 {
-		return ErrInvalidInput
+		return validation.New(ErrInvalidInput, "durationSeconds", "durationSeconds must be greater than zero")
 	}
 	if totalTickets <= 0 {
-		return ErrInvalidInput
+		return validation.New(ErrInvalidInput, "totalTickets", "totalTickets must be greater than zero")
 	}
 	if startsAt.IsZero() || !startsAt.After(now) {
-		return ErrInvalidInput
+		return validation.New(ErrInvalidInput, "startsAt", "startsAt must be a future date and time")
 	}
 	return nil
 }
@@ -378,14 +391,14 @@ func endsAt(startsAt time.Time, durationSeconds int32) time.Time {
 func DecodeCursor(raw string) (*Cursor, error) {
 	sortKey, id, err := pagination.Decode(raw)
 	if err != nil {
-		return nil, ErrInvalidInput
+		return nil, validation.New(ErrInvalidInput, "cursor", "cursor is invalid or expired")
 	}
 	startsAt, err := time.Parse(time.RFC3339Nano, sortKey)
 	if err != nil {
-		return nil, ErrInvalidInput
+		return nil, validation.New(ErrInvalidInput, "cursor", "cursor is invalid or expired")
 	}
 	if _, err := uuid.Parse(id); err != nil {
-		return nil, ErrInvalidInput
+		return nil, validation.New(ErrInvalidInput, "cursor", "cursor is invalid or expired")
 	}
 	return &Cursor{StartsAt: startsAt, ID: id}, nil
 }

@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Rahmannugar/livdot/internal/infra/pagination"
+	"github.com/Rahmannugar/livdot/internal/validation"
 	"github.com/google/uuid"
 )
 
@@ -123,7 +124,8 @@ func (service *Service) UpdateProfile(
 	}
 	if input.Availability != nil {
 		if !input.Availability.Valid() {
-			return Profile{}, ErrInvalidInput
+			return Profile{}, validation.New(ErrInvalidInput, "availability",
+				"availability must be available or unavailable")
 		}
 		update.Availability = *input.Availability
 	}
@@ -145,10 +147,11 @@ func (service *Service) UpdateProfile(
 
 func (service *Service) List(ctx context.Context, filter Filter) (Page, error) {
 	if filter.Name != "" && utf8.RuneCountInString(filter.Name) > maxCrewNameRunes {
-		return Page{}, ErrInvalidInput
+		return Page{}, validation.New(ErrInvalidInput, "name", "name must be 200 characters or fewer")
 	}
 	if filter.Availability != "" && !filter.Availability.Valid() {
-		return Page{}, ErrInvalidInput
+		return Page{}, validation.New(ErrInvalidInput, "availability",
+			"availability must be available or unavailable")
 	}
 	if filter.PageSize <= 0 {
 		filter.PageSize = defaultListLimit
@@ -195,8 +198,11 @@ func (availability Availability) Valid() bool {
 }
 
 func validateName(name string) error {
-	if name == "" || utf8.RuneCountInString(name) > maxCrewNameRunes {
-		return ErrInvalidInput
+	if name == "" {
+		return validation.New(ErrInvalidInput, "name", "name is required")
+	}
+	if utf8.RuneCountInString(name) > maxCrewNameRunes {
+		return validation.New(ErrInvalidInput, "name", "name must be 200 characters or fewer")
 	}
 	return nil
 }
@@ -204,7 +210,7 @@ func validateName(name string) error {
 func normalizeList(raw json.RawMessage) (json.RawMessage, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '[' || !json.Valid(trimmed) {
-		return nil, ErrInvalidInput
+		return nil, validation.New(ErrInvalidInput, "list", "list must be a valid JSON array")
 	}
 	return trimmed, nil
 }
@@ -213,10 +219,10 @@ func normalizeList(raw json.RawMessage) (json.RawMessage, error) {
 func DecodeCursor(raw string) (*Cursor, error) {
 	name, accountID, err := pagination.Decode(raw)
 	if err != nil || name == "" {
-		return nil, ErrInvalidInput
+		return nil, validation.New(ErrInvalidInput, "cursor", "cursor is invalid or expired")
 	}
 	if _, err := uuid.Parse(accountID); err != nil {
-		return nil, ErrInvalidInput
+		return nil, validation.New(ErrInvalidInput, "cursor", "cursor is invalid or expired")
 	}
 	return &Cursor{Name: name, AccountID: accountID}, nil
 }

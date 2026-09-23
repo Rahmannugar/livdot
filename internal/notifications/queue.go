@@ -55,13 +55,13 @@ func (queue *Queue) Enqueue(ctx context.Context, message Email) (bool, error) {
 		return false, fmt.Errorf("encode notification data: %w", err)
 	}
 	if _, err := notificationsdb.New(queue.db).CreateEmailNotification(ctx, notificationsdb.CreateEmailNotificationParams{
-		ID:               id,
-		NotificationType: message.Type,
-		RecipientUserID:  optionalUUID(message.RecipientAccountID),
-		RecipientEmail:   message.RecipientEmail,
-		TemplateKey:      message.TemplateKey,
-		Payload:          payload,
-		IdempotencyKey:   message.IdempotencyKey,
+		ID:                 id,
+		NotificationType:   message.Type,
+		RecipientAccountID: optionalUUID(message.RecipientAccountID),
+		RecipientEmail:     message.RecipientEmail,
+		TemplateKey:        message.TemplateKey,
+		Payload:            payload,
+		IdempotencyKey:     message.IdempotencyKey,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil

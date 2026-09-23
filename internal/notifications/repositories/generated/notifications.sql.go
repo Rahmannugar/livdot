@@ -31,7 +31,7 @@ SET status = 'processing',
 FROM claim
 WHERE notification.id = claim.id
 RETURNING notification.id, notification.notification_type,
-          notification.recipient_user_id, notification.recipient_email,
+          notification.recipient_account_id, notification.recipient_email,
           notification.template_key, notification.payload,
           notification.idempotency_key, notification.status,
           notification.attempt_count, notification.next_attempt_at,
@@ -51,7 +51,7 @@ func (q *Queries) ClaimPendingEmailNotifications(ctx context.Context, limit int3
 		if err := rows.Scan(
 			&i.ID,
 			&i.NotificationType,
-			&i.RecipientUserID,
+			&i.RecipientAccountID,
 			&i.RecipientEmail,
 			&i.TemplateKey,
 			&i.Payload,
@@ -77,31 +77,31 @@ func (q *Queries) ClaimPendingEmailNotifications(ctx context.Context, limit int3
 
 const createEmailNotification = `-- name: CreateEmailNotification :one
 INSERT INTO email_notifications (
-    id, notification_type, recipient_user_id, recipient_email,
+    id, notification_type, recipient_account_id, recipient_email,
     template_key, payload, idempotency_key
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (idempotency_key) DO NOTHING
-RETURNING id, notification_type, recipient_user_id, recipient_email,
+RETURNING id, notification_type, recipient_account_id, recipient_email,
           template_key, payload, idempotency_key, status, attempt_count,
           next_attempt_at, locked_at, delivered_at, last_error, created_at, updated_at
 `
 
 type CreateEmailNotificationParams struct {
-	ID               uuid.UUID
-	NotificationType string
-	RecipientUserID  pgtype.UUID
-	RecipientEmail   string
-	TemplateKey      string
-	Payload          []byte
-	IdempotencyKey   string
+	ID                 uuid.UUID
+	NotificationType   string
+	RecipientAccountID pgtype.UUID
+	RecipientEmail     string
+	TemplateKey        string
+	Payload            []byte
+	IdempotencyKey     string
 }
 
 func (q *Queries) CreateEmailNotification(ctx context.Context, arg CreateEmailNotificationParams) (EmailNotification, error) {
 	row := q.db.QueryRow(ctx, createEmailNotification,
 		arg.ID,
 		arg.NotificationType,
-		arg.RecipientUserID,
+		arg.RecipientAccountID,
 		arg.RecipientEmail,
 		arg.TemplateKey,
 		arg.Payload,
@@ -111,7 +111,7 @@ func (q *Queries) CreateEmailNotification(ctx context.Context, arg CreateEmailNo
 	err := row.Scan(
 		&i.ID,
 		&i.NotificationType,
-		&i.RecipientUserID,
+		&i.RecipientAccountID,
 		&i.RecipientEmail,
 		&i.TemplateKey,
 		&i.Payload,
@@ -133,7 +133,7 @@ UPDATE email_notifications
 SET status = 'delivered', delivered_at = COALESCE(delivered_at, now()),
     locked_at = NULL, last_error = NULL, updated_at = now()
 WHERE id = $1 AND status = 'processing'
-RETURNING id, notification_type, recipient_user_id, recipient_email,
+RETURNING id, notification_type, recipient_account_id, recipient_email,
           template_key, payload, idempotency_key, status, attempt_count,
           next_attempt_at, locked_at, delivered_at, last_error, created_at, updated_at
 `
@@ -144,7 +144,7 @@ func (q *Queries) MarkEmailNotificationDelivered(ctx context.Context, id uuid.UU
 	err := row.Scan(
 		&i.ID,
 		&i.NotificationType,
-		&i.RecipientUserID,
+		&i.RecipientAccountID,
 		&i.RecipientEmail,
 		&i.TemplateKey,
 		&i.Payload,
@@ -166,7 +166,7 @@ UPDATE email_notifications
 SET status = 'failed', locked_at = NULL, last_error = $2,
     next_attempt_at = $3, updated_at = now()
 WHERE id = $1 AND status = 'processing'
-RETURNING id, notification_type, recipient_user_id, recipient_email,
+RETURNING id, notification_type, recipient_account_id, recipient_email,
           template_key, payload, idempotency_key, status, attempt_count,
           next_attempt_at, locked_at, delivered_at, last_error, created_at, updated_at
 `
@@ -183,7 +183,7 @@ func (q *Queries) MarkEmailNotificationFailed(ctx context.Context, arg MarkEmail
 	err := row.Scan(
 		&i.ID,
 		&i.NotificationType,
-		&i.RecipientUserID,
+		&i.RecipientAccountID,
 		&i.RecipientEmail,
 		&i.TemplateKey,
 		&i.Payload,

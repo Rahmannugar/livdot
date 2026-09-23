@@ -15,7 +15,7 @@ import (
 
 const (
 	title       = "LIV DOT API"
-	version     = "1.0.0"
+	version     = "1.1.0"
 	description = "Backend for paid live events: event lifecycle, ticket purchase, mocked payment, refunds, and payouts."
 )
 
@@ -33,7 +33,8 @@ func Document() map[string]any {
 				"required": []string{"code", "message"},
 				"properties": map[string]any{
 					"code":    map[string]any{"type": "string", "example": "invalid_request"},
-					"message": map[string]any{"type": "string", "example": "event details are invalid"},
+					"message": map[string]any{"type": "string", "example": "startsAt must be a future date and time"},
+					"field":   map[string]any{"type": "string", "example": "startsAt"},
 				},
 			},
 		},

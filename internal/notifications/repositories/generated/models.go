@@ -57,19 +57,19 @@ func (ns NullEmailNotificationStatus) Value() (driver.Value, error) {
 }
 
 type EmailNotification struct {
-	ID               uuid.UUID
-	NotificationType string
-	RecipientUserID  pgtype.UUID
-	RecipientEmail   string
-	TemplateKey      string
-	Payload          []byte
-	IdempotencyKey   string
-	Status           EmailNotificationStatus
-	AttemptCount     int32
-	NextAttemptAt    pgtype.Timestamptz
-	LockedAt         pgtype.Timestamptz
-	DeliveredAt      pgtype.Timestamptz
-	LastError        *string
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
+	ID                 uuid.UUID
+	NotificationType   string
+	RecipientAccountID pgtype.UUID
+	RecipientEmail     string
+	TemplateKey        string
+	Payload            []byte
+	IdempotencyKey     string
+	Status             EmailNotificationStatus
+	AttemptCount       int32
+	NextAttemptAt      pgtype.Timestamptz
+	LockedAt           pgtype.Timestamptz
+	DeliveredAt        pgtype.Timestamptz
+	LastError          *string
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
 }

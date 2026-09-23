@@ -23,6 +23,7 @@ import (
 	"github.com/Rahmannugar/livdot/internal/health"
 	"github.com/Rahmannugar/livdot/internal/infra/cache"
 	"github.com/Rahmannugar/livdot/internal/infra/database"
+	"github.com/Rahmannugar/livdot/internal/infra/httpapi"
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	streamprovider "github.com/Rahmannugar/livdot/internal/infra/streaming"
@@ -92,7 +93,7 @@ func run(logger *slog.Logger) error {
 	defer redisClient.Close()
 
 	router := gin.New()
-	router.Use(gin.Recovery())
+	router.Use(httpapi.RequestLogger(logger), httpapi.Recovery(logger))
 	health.RegisterRoutes(router, databasePool, redisClient)
 	registerDocs(router)
 	router.GET("/", func(ctx *gin.Context) {

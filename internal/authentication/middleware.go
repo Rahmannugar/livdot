@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Rahmannugar/livdot/internal/infra/httpapi"
 	"github.com/gin-gonic/gin"
 )
 
@@ -33,7 +34,7 @@ func RequireSession(resolver SessionResolver) gin.HandlerFunc {
 			return
 		}
 		if err != nil {
-			writeMiddlewareError(ctx, http.StatusInternalServerError, "authentication_unavailable",
+			writeMiddlewareFailure(ctx, err, http.StatusInternalServerError, "authentication_unavailable",
 				"authentication could not be completed")
 			return
 		}
@@ -87,5 +88,11 @@ func bearerToken(ctx *gin.Context) (string, bool) {
 }
 
 func writeMiddlewareError(ctx *gin.Context, status int, code, message string) {
-	ctx.AbortWithStatusJSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
+	ctx.Abort()
+	httpapi.WriteError(ctx, nil, status, code, message, "")
+}
+
+func writeMiddlewareFailure(ctx *gin.Context, err error, status int, code, message string) {
+	ctx.Abort()
+	httpapi.WriteError(ctx, err, status, code, message, "")
 }

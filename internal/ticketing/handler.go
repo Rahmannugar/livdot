@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/Rahmannugar/livdot/internal/authentication"
+	"github.com/Rahmannugar/livdot/internal/infra/httpapi"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
+	"github.com/Rahmannugar/livdot/internal/validation"
 	"github.com/gin-gonic/gin"
 )
 
@@ -75,7 +77,8 @@ func (handler *Handler) purchase(ctx *gin.Context) {
 	}
 	var request purchaseRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		writeTicketError(ctx, ErrInvalidInput)
+		writeTicketError(ctx, validation.New(ErrInvalidInput, "body",
+			"request body must include a non-empty idempotencyKey"))
 		return
 	}
 	purchase, err := handler.service.Purchase(
@@ -130,6 +133,7 @@ func writeTicketError(ctx *gin.Context, err error) {
 	status := http.StatusInternalServerError
 	code := "ticketing_unavailable"
 	message := "the ticketing request could not be completed"
+	field := ""
 	switch {
 	case errors.Is(err, authentication.ErrUnauthenticated):
 		status = http.StatusUnauthorized
@@ -139,6 +143,10 @@ func writeTicketError(ctx *gin.Context, err error) {
 		status = http.StatusBadRequest
 		code = "invalid_request"
 		message = "the purchase request is invalid"
+		if safeField, safeMessage, ok := validation.Details(err); ok {
+			field = safeField
+			message = safeMessage
+		}
 	case errors.Is(err, ErrNotFound):
 		status = http.StatusNotFound
 		code = "not_found"
@@ -155,5 +163,5 @@ func writeTicketError(ctx *gin.Context, err error) {
 		code = "purchase_conflict"
 		message = "the event cannot be purchased in its current state"
 	}
-	ctx.JSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
+	httpapi.WriteError(ctx, err, status, code, message, field)
 }

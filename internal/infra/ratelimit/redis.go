@@ -4,6 +4,7 @@ package ratelimit
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -139,6 +140,11 @@ func (limiter *Limiter) Middleware(policy Policy) gin.HandlerFunc {
 		result, err := limiter.Allow(ctx.Request.Context(), limiter.key(ctx, policy), policy)
 		if err != nil {
 			// fail open: a cache outage must not lock every caller out.
+			slog.Warn("rate limiter unavailable; request allowed",
+				"policy", policy.Name,
+				"route", ctx.FullPath(),
+				"error", err,
+			)
 			ctx.Next()
 			return
 		}

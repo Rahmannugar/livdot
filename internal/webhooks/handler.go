@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Rahmannugar/livdot/internal/infra/httpapi"
 	"github.com/Rahmannugar/livdot/internal/infra/payment"
 	"github.com/Rahmannugar/livdot/internal/infra/ratelimit"
 	"github.com/gin-gonic/gin"
@@ -55,5 +56,5 @@ func writeWebhookError(ctx *gin.Context, err error) {
 		code = "invalid_webhook"
 		message = "the webhook payload is invalid"
 	}
-	ctx.JSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
+	httpapi.WriteError(ctx, err, status, code, message, "")
 }
