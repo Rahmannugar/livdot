@@ -2962,6 +2962,11 @@
   },
   "servers": [
     {
+      "description": "local",
+      "url": "http://localhost:8080"
+    },
+    {
+      "description": "same origin",
       "url": "/"
     }
   ]

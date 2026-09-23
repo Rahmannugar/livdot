@@ -74,7 +74,8 @@ func (registry *Registry) Document(title, version, description string) map[strin
 			"description": description,
 		},
 		"servers": []any{
-			map[string]any{"url": "/"},
+			map[string]any{"url": "http://localhost:8080", "description": "local"},
+			map[string]any{"url": "/", "description": "same origin"},
 		},
 		"paths":      paths,
 		"components": components,
