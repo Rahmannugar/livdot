@@ -853,7 +853,7 @@ SET idempotency_key = $2,
     last_error = NULL,
     updated_at = now()
 WHERE id = $1
-  AND status IN ('failed', 'refunded')
+  AND status IN ('initiated', 'failed', 'refunded')
 RETURNING id, event_id, user_id, amount_minor, status, provider, provider_payment_id,
           idempotency_key, checkout_url, attempt_count, next_attempt_at, locked_at,
           last_error, created_at, updated_at, paid_at, refunded_at

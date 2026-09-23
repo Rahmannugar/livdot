@@ -157,13 +157,22 @@ func writeTicketError(ctx *gin.Context, err error) {
 		status = http.StatusForbidden
 		code = "forbidden"
 		message = "this ticket belongs to another account"
-	case errors.Is(err, ErrEventClosed),
-		errors.Is(err, ErrSoldOut),
-		errors.Is(err, ErrAlreadyPurchased),
-		errors.Is(err, ErrReservationGone):
+	case errors.Is(err, ErrEventClosed):
 		status = http.StatusConflict
-		code = "purchase_conflict"
-		message = "the event cannot be purchased in its current state"
+		code = "event_closed"
+		message = "the event is not open for purchase"
+	case errors.Is(err, ErrSoldOut):
+		status = http.StatusConflict
+		code = "sold_out"
+		message = "the event has no tickets left"
+	case errors.Is(err, ErrAlreadyPurchased):
+		status = http.StatusConflict
+		code = "already_purchased"
+		message = "this account already has a purchase for the event"
+	case errors.Is(err, ErrReservationGone):
+		status = http.StatusConflict
+		code = "reservation_gone"
+		message = "the reservation expired before the payment settled"
 	}
 	httpapi.WriteError(ctx, err, status, code, message, field)
 }
